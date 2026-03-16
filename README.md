@@ -2,15 +2,23 @@
 
 Collects and summarizes air quality sensor data from IoT devices.
 
-Currently supports [Sensibo](https://sensibo.com/) Air/Sky devices, reporting temperature and humidity readings with 24-hour statistics.
+Supports:
+- [Sensibo](https://sensibo.com/) Air/Sky — temperature, humidity, dew point (24h history)
+- [PurpleAir](https://www.purpleair.com/) (local API) — PM1.0/2.5/10, AQI, temperature, humidity, dew point, pressure, VOC
 
 ## Setup
 
-1. Get a Sensibo API key from https://home.sensibo.com/me/api
-2. Set the environment variable:
-   ```sh
-   export SENSIBO_API_KEY="your-api-key"
-   ```
+Configure one or both sensor types via environment variables:
+
+```sh
+# Sensibo (cloud API)
+export SENSIBO_API_KEY="your-api-key"    # from https://home.sensibo.com/me/api
+
+# PurpleAir (local sensors, comma-separated IPs)
+export PURPLEAIR_HOSTS="192.168.1.218,192.168.1.219"
+```
+
+At least one must be set.
 
 ## Usage
 
@@ -21,16 +29,34 @@ go run .
 Example output:
 
 ```
-Found 3 device(s)
+Sensibo: 3 device(s)
 
 === Office (abc123) ===
-  Latest reading (Mar 16 13:01):
-    Temperature: 22.8°C
-    Humidity:    55.4%
+  Latest reading (Mar 16 14:45):
+    Temperature: 24.5°C / 76.1°F
+    Humidity:    49.2%
+    Dew Point:   13.2°C / 55.7°F
 
-  Last 24h summary (1753 data points):
-    Temperature: 22.4°C avg (20.2°C – 25.1°C)
-    Humidity:    60.4% avg (48.7% – 66.9%)
+  Last 24h summary (1822 data points):
+    Temperature: 22.4°C / 72.4°F avg (20.2–25.1°C / 68.4–77.2°F)
+    Humidity:    60.1% avg (48.7% – 66.9%)
+    Dew Point:   14.3°C / 57.7°F avg (12.6–17.5°C / 54.6–63.5°F)
+
+PurpleAir: 1 sensor(s)
+
+=== PurpleAir a4:e5:7c:28:49:7 (outside) ===
+  Environment:
+    Temperature: 35.0°C / 95.0°F
+    Humidity:    20.0%
+    Dew Point:   8.7°C / 47.7°F
+    Pressure:    1014.9 mbar
+    VOC (gas):   87.9 kOhm
+
+  Air Quality (avg of channels A & B):
+    PM1.0:  1.5 µg/m³
+    PM2.5:  2.5 µg/m³  (A: 2.3, B: 2.6)
+    PM10:   2.9 µg/m³
+    AQI:    10
 ```
 
 ## Building
