@@ -1,1 +1,9 @@
+# Environment / secrets
 .envrc
+
+# Build output
+airquality
+
+# Tool config
+.claude/
+.serena/

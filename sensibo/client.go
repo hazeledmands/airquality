@@ -9,7 +9,10 @@ import (
 	"time"
 )
 
-const baseURL = "https://home.sensibo.com/api/v2"
+var baseURL = "https://home.sensibo.com/api/v2"
+
+// setBaseURL overrides the API base URL (used in tests).
+func setBaseURL(url string) { baseURL = url }
 
 // Client communicates with the Sensibo API.
 type Client struct {
