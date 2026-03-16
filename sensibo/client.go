@@ -82,6 +82,11 @@ func (c *Client) GetHistoricalMeasurements(deviceID string, days int) (Historica
 	return resp.Result, nil
 }
 
+// CtoF converts Celsius to Fahrenheit.
+func CtoF(c float64) float64 {
+	return c*9.0/5.0 + 32.0
+}
+
 // DewPoint calculates the dew point in °C from temperature (°C) and relative
 // humidity (%) using the Magnus formula.
 func DewPoint(tempC, humidity float64) float64 {

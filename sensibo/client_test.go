@@ -195,6 +195,28 @@ func TestSummarize_IncludesDewPoint(t *testing.T) {
 	}
 }
 
+func TestCtoF(t *testing.T) {
+	tests := []struct {
+		name  string
+		c     float64
+		wantF float64
+	}{
+		{"freezing", 0.0, 32.0},
+		{"boiling", 100.0, 212.0},
+		{"body temp", 37.0, 98.6},
+		{"negative", -40.0, -40.0},
+		{"room temp", 22.0, 71.6},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := CtoF(tc.c)
+			if math.Abs(got-tc.wantF) > 0.1 {
+				t.Errorf("CtoF(%.1f) = %.1f, want %.1f", tc.c, got, tc.wantF)
+			}
+		})
+	}
+}
+
 func TestSummarize_Empty(t *testing.T) {
 	s := Summarize("dev1", "Empty", HistoricalMeasurements{})
 

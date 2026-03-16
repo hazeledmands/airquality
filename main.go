@@ -43,14 +43,17 @@ func printSummary(s sensibo.DeviceSummary) {
 		return
 	}
 
+	f := sensibo.CtoF
 	fmt.Printf("  Latest reading (%s):\n", s.Latest.Time.Local().Format("Jan 02 15:04"))
-	fmt.Printf("    Temperature: %.1f°C\n", s.Latest.Temperature)
+	fmt.Printf("    Temperature: %.1f°C / %.1f°F\n", s.Latest.Temperature, f(s.Latest.Temperature))
 	fmt.Printf("    Humidity:    %.1f%%\n", s.Latest.Humidity)
-	fmt.Printf("    Dew Point:   %.1f°C\n", s.Latest.DewPoint)
+	fmt.Printf("    Dew Point:   %.1f°C / %.1f°F\n", s.Latest.DewPoint, f(s.Latest.DewPoint))
 	fmt.Println()
 	fmt.Printf("  Last 24h summary (%d data points):\n", s.DataPoints)
-	fmt.Printf("    Temperature: %.1f°C avg (%.1f°C – %.1f°C)\n", s.AvgTemp, s.MinTemp, s.MaxTemp)
+	fmt.Printf("    Temperature: %.1f°C / %.1f°F avg (%.1f–%.1f°C / %.1f–%.1f°F)\n",
+		s.AvgTemp, f(s.AvgTemp), s.MinTemp, s.MaxTemp, f(s.MinTemp), f(s.MaxTemp))
 	fmt.Printf("    Humidity:    %.1f%% avg (%.1f%% – %.1f%%)\n", s.AvgHumid, s.MinHumid, s.MaxHumid)
-	fmt.Printf("    Dew Point:   %.1f°C avg (%.1f°C – %.1f°C)\n", s.AvgDewPoint, s.MinDewPoint, s.MaxDewPoint)
+	fmt.Printf("    Dew Point:   %.1f°C / %.1f°F avg (%.1f–%.1f°C / %.1f–%.1f°F)\n",
+		s.AvgDewPoint, f(s.AvgDewPoint), s.MinDewPoint, s.MaxDewPoint, f(s.MinDewPoint), f(s.MaxDewPoint))
 	fmt.Println()
 }
