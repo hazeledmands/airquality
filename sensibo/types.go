@@ -29,6 +29,7 @@ type HistoricalMeasurements struct {
 type ParsedMeasurement struct {
 	Temperature float64
 	Humidity    float64
+	DewPoint    float64
 	Time        time.Time
 }
 
@@ -40,10 +41,13 @@ type DeviceSummary struct {
 	AvgTemp    float64
 	MinTemp    float64
 	MaxTemp    float64
-	AvgHumid   float64
-	MinHumid   float64
-	MaxHumid   float64
-	DataPoints int
+	AvgHumid    float64
+	MinHumid    float64
+	MaxHumid    float64
+	AvgDewPoint float64
+	MinDewPoint float64
+	MaxDewPoint float64
+	DataPoints  int
 }
 
 // API response wrappers.

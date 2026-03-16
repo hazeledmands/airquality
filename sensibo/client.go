@@ -82,16 +82,29 @@ func (c *Client) GetHistoricalMeasurements(deviceID string, days int) (Historica
 	return resp.Result, nil
 }
 
+// DewPoint calculates the dew point in °C from temperature (°C) and relative
+// humidity (%) using the Magnus formula.
+func DewPoint(tempC, humidity float64) float64 {
+	const (
+		b = 17.67
+		c = 243.5
+	)
+	gamma := math.Log(humidity/100.0) + (b*tempC)/(c+tempC)
+	return (c * gamma) / (b - gamma)
+}
+
 // Summarize computes aggregate stats from historical measurements.
 func Summarize(deviceID, roomName string, m HistoricalMeasurements) DeviceSummary {
 	summary := DeviceSummary{
-		DeviceID:   deviceID,
-		RoomName:   roomName,
-		DataPoints: len(m.Temperature),
-		MinTemp:    math.MaxFloat64,
-		MinHumid:   math.MaxFloat64,
-		MaxTemp:    -math.MaxFloat64,
-		MaxHumid:   -math.MaxFloat64,
+		DeviceID:    deviceID,
+		RoomName:    roomName,
+		DataPoints:  len(m.Temperature),
+		MinTemp:     math.MaxFloat64,
+		MinHumid:    math.MaxFloat64,
+		MinDewPoint: math.MaxFloat64,
+		MaxTemp:     -math.MaxFloat64,
+		MaxHumid:    -math.MaxFloat64,
+		MaxDewPoint: -math.MaxFloat64,
 	}
 
 	if len(m.Temperature) == 0 {
@@ -124,6 +137,26 @@ func Summarize(deviceID, roomName string, m HistoricalMeasurements) DeviceSummar
 		summary.AvgHumid = totalHumid / float64(len(m.Humidity))
 	}
 
+	// Compute dew point for each paired temperature+humidity reading.
+	n := len(m.Temperature)
+	if len(m.Humidity) < n {
+		n = len(m.Humidity)
+	}
+	var totalDew float64
+	for i := 0; i < n; i++ {
+		dp := DewPoint(m.Temperature[i].Value, m.Humidity[i].Value)
+		totalDew += dp
+		if dp < summary.MinDewPoint {
+			summary.MinDewPoint = dp
+		}
+		if dp > summary.MaxDewPoint {
+			summary.MaxDewPoint = dp
+		}
+	}
+	if n > 0 {
+		summary.AvgDewPoint = totalDew / float64(n)
+	}
+
 	// Latest reading is the last entry (data is chronological).
 	latestTemp := m.Temperature[len(m.Temperature)-1]
 	if t, err := time.Parse(time.RFC3339, latestTemp.Time); err == nil {
@@ -134,6 +167,7 @@ func Summarize(deviceID, roomName string, m HistoricalMeasurements) DeviceSummar
 	}
 	if len(m.Humidity) > 0 {
 		summary.Latest.Humidity = m.Humidity[len(m.Humidity)-1].Value
+		summary.Latest.DewPoint = DewPoint(summary.Latest.Temperature, summary.Latest.Humidity)
 	}
 
 	return summary

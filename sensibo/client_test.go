@@ -145,6 +145,56 @@ func TestSummarize(t *testing.T) {
 	}
 }
 
+func TestDewPoint(t *testing.T) {
+	tests := []struct {
+		name     string
+		tempC    float64
+		humidity float64
+		wantC    float64
+	}{
+		// Reference values from well-known psychrometric tables.
+		{"typical indoor", 22.0, 50.0, 11.1},
+		{"hot humid", 35.0, 80.0, 31.0},
+		{"cold dry", 5.0, 30.0, -11.2},
+		{"saturated", 20.0, 100.0, 20.0},
+		{"very dry", 25.0, 10.0, -8.8},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := DewPoint(tc.tempC, tc.humidity)
+			if math.Abs(got-tc.wantC) > 0.5 {
+				t.Errorf("DewPoint(%.1f, %.1f) = %.1f, want %.1f (±0.5)", tc.tempC, tc.humidity, got, tc.wantC)
+			}
+		})
+	}
+}
+
+func TestSummarize_IncludesDewPoint(t *testing.T) {
+	m := HistoricalMeasurements{
+		Temperature: []TimedValue{
+			{Time: "2026-03-15T10:00:00Z", Value: 22.0},
+			{Time: "2026-03-15T11:00:00Z", Value: 24.0},
+		},
+		Humidity: []TimedValue{
+			{Time: "2026-03-15T10:00:00Z", Value: 50.0},
+			{Time: "2026-03-15T11:00:00Z", Value: 60.0},
+		},
+	}
+
+	s := Summarize("dev1", "Office", m)
+
+	// Dew points: DewPoint(22,50)≈11.1, DewPoint(24,60)≈15.5
+	if s.AvgDewPoint == 0 {
+		t.Error("expected AvgDewPoint to be computed")
+	}
+	if s.MinDewPoint >= s.MaxDewPoint {
+		t.Errorf("expected MinDewPoint < MaxDewPoint, got %.1f >= %.1f", s.MinDewPoint, s.MaxDewPoint)
+	}
+	if s.Latest.DewPoint == 0 {
+		t.Error("expected latest DewPoint to be set")
+	}
+}
+
 func TestSummarize_Empty(t *testing.T) {
 	s := Summarize("dev1", "Empty", HistoricalMeasurements{})
 

@@ -46,9 +46,11 @@ func printSummary(s sensibo.DeviceSummary) {
 	fmt.Printf("  Latest reading (%s):\n", s.Latest.Time.Local().Format("Jan 02 15:04"))
 	fmt.Printf("    Temperature: %.1f°C\n", s.Latest.Temperature)
 	fmt.Printf("    Humidity:    %.1f%%\n", s.Latest.Humidity)
+	fmt.Printf("    Dew Point:   %.1f°C\n", s.Latest.DewPoint)
 	fmt.Println()
 	fmt.Printf("  Last 24h summary (%d data points):\n", s.DataPoints)
 	fmt.Printf("    Temperature: %.1f°C avg (%.1f°C – %.1f°C)\n", s.AvgTemp, s.MinTemp, s.MaxTemp)
 	fmt.Printf("    Humidity:    %.1f%% avg (%.1f%% – %.1f%%)\n", s.AvgHumid, s.MinHumid, s.MaxHumid)
+	fmt.Printf("    Dew Point:   %.1f°C avg (%.1f°C – %.1f°C)\n", s.AvgDewPoint, s.MinDewPoint, s.MaxDewPoint)
 	fmt.Println()
 }
