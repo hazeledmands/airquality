@@ -5,12 +5,16 @@ services:
       - .:/app
       - ${HOST_HOME:-.}/.claude:/root/.claude
       - ${HOST_HOME:-.}/.claude.json:/root/.claude.json
+      - ${HOST_HOME:-.}/.codex:/root/.codex
+      - ${HOST_HOME:-.}/.codex.json:/root/.codex.json
       - ${HOST_HOME:-.}/.config/git:/root/.config/git:ro
     network_mode: host
     environment:
       - SENSIBO_API_KEY
       - PURPLEAIR_HOSTS
       - ANTHROPIC_API_KEY
+      - OPENAI_API_KEY
+      - CODEX_HOME=/root/.codex
     stdin_open: true
     tty: true
     command: sleep infinity
