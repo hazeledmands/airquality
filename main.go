@@ -15,34 +15,52 @@ import (
 	"github.com/hazel/airquality/sensibo"
 )
 
-func main() {
-	if len(os.Args) > 1 && os.Args[0] != "-test" && os.Args[1] == "log" {
-		runLog(os.Args[2:])
-		return
-	}
-
-	hasSensibo := false
-	if apiKey := os.Getenv("SENSIBO_API_KEY"); apiKey != "" {
-		hasSensibo = true
-		fetchSensibo(apiKey)
-	}
-
-	hasPurpleAir := false
-	if hosts := os.Getenv("PURPLEAIR_HOSTS"); hosts != "" {
-		hasPurpleAir = true
-		fetchPurpleAir(hosts)
-	}
-
-	if !hasSensibo && !hasPurpleAir {
-		log.Fatal("No sensors configured. Set SENSIBO_API_KEY and/or PURPLEAIR_HOSTS.")
-	}
+type config struct {
+	interval time.Duration
+	output   string
+	verbose  bool
+	once     bool
 }
 
-func runLog(args []string) {
-	fs := flag.NewFlagSet("log", flag.ExitOnError)
-	interval := fs.Duration("interval", 1*time.Minute, "capture interval")
-	output := fs.String("output", "airquality.csv", "output CSV file path")
+func parseConfig(args []string) config {
+	var cfg config
+	fs := flag.NewFlagSet("airquality", flag.ExitOnError)
+
+	fs.DurationVar(&cfg.interval, "interval", 1*time.Minute, "")
+	fs.DurationVar(&cfg.interval, "i", 1*time.Minute, "")
+	fs.StringVar(&cfg.output, "output", "airquality.csv", "")
+	fs.StringVar(&cfg.output, "o", "airquality.csv", "")
+	fs.BoolVar(&cfg.verbose, "verbose", false, "")
+	fs.BoolVar(&cfg.verbose, "v", false, "")
+	fs.BoolVar(&cfg.once, "once", false, "")
+
+	fs.Usage = func() { printUsage(fs) }
 	fs.Parse(args)
+	return cfg
+}
+
+func printUsage(_ *flag.FlagSet) {
+	fmt.Fprintf(os.Stderr, `Usage: airquality [options]
+
+Continuously logs air quality sensor data to a CSV file.
+
+Options:
+  -i, --interval duration   capture interval (default 1m)
+  -o, --output string       output CSV file path (default "airquality.csv")
+  -v, --verbose             print detailed sensor data on each capture
+      --once                capture once and exit
+  -h, --help                show this help
+
+Environment:
+  SENSIBO_API_KEY     Sensibo cloud API key
+  PURPLEAIR_HOSTS     comma-separated PurpleAir sensor IPs
+
+At least one sensor must be configured.
+`)
+}
+
+func main() {
+	cfg := parseConfig(os.Args[1:])
 
 	sensiboKey := os.Getenv("SENSIBO_API_KEY")
 	purpleairHosts := parsePurpleAirHosts(os.Getenv("PURPLEAIR_HOSTS"))
@@ -51,18 +69,21 @@ func runLog(args []string) {
 		log.Fatal("No sensors configured. Set SENSIBO_API_KEY and/or PURPLEAIR_HOSTS.")
 	}
 
-	csvLog, err := logger.NewCSVLogger(*output)
+	csvLog, err := logger.NewCSVLogger(cfg.output)
 	if err != nil {
 		log.Fatalf("Failed to open log file: %v", err)
 	}
 	defer csvLog.Close()
 
-	log.Printf("Logging to %s every %s (Ctrl+C to stop)", *output, *interval)
+	if cfg.once {
+		captureAll(csvLog, sensiboKey, purpleairHosts, cfg.verbose)
+		return
+	}
 
-	// Capture once immediately, then on each tick.
-	captureAll(csvLog, sensiboKey, purpleairHosts)
+	log.Printf("Logging to %s every %s (Ctrl+C to stop)", cfg.output, cfg.interval)
+	captureAll(csvLog, sensiboKey, purpleairHosts, cfg.verbose)
 
-	ticker := time.NewTicker(*interval)
+	ticker := time.NewTicker(cfg.interval)
 	defer ticker.Stop()
 
 	sig := make(chan os.Signal, 1)
@@ -71,7 +92,7 @@ func runLog(args []string) {
 	for {
 		select {
 		case <-ticker.C:
-			captureAll(csvLog, sensiboKey, purpleairHosts)
+			captureAll(csvLog, sensiboKey, purpleairHosts, cfg.verbose)
 		case <-sig:
 			log.Println("Stopping.")
 			return
@@ -79,18 +100,18 @@ func runLog(args []string) {
 	}
 }
 
-func captureAll(csvLog *logger.CSVLogger, sensiboKey string, purpleairHosts []string) {
+func captureAll(csvLog *logger.CSVLogger, sensiboKey string, purpleairHosts []string, verbose bool) {
 	now := time.Now()
 
 	if sensiboKey != "" {
-		captureSensibo(csvLog, sensiboKey, now)
+		captureSensibo(csvLog, sensiboKey, now, verbose)
 	}
 	if len(purpleairHosts) > 0 {
-		capturePurpleAir(csvLog, purpleairHosts, now)
+		capturePurpleAir(csvLog, purpleairHosts, now, verbose)
 	}
 }
 
-func captureSensibo(csvLog *logger.CSVLogger, apiKey string, now time.Time) {
+func captureSensibo(csvLog *logger.CSVLogger, apiKey string, now time.Time, verbose bool) {
 	client := sensibo.NewClient(apiKey)
 	devices, err := client.GetDevices()
 	if err != nil {
@@ -122,11 +143,15 @@ func captureSensibo(csvLog *logger.CSVLogger, apiKey string, now time.Time) {
 		if err := csvLog.Log(rec); err != nil {
 			log.Printf("Log write error: %v", err)
 		}
-		log.Printf("  sensibo/%s (%s): %.1f°C, %.1f%%, dew point %.1f°C", dev.ID, dev.Room.Name, rec.TempC, rec.Humidity, rec.DewPointC)
+		if verbose {
+			printVerboseRecord(rec)
+		} else {
+			log.Printf("  sensibo/%s (%s): %.1f°C, %.1f%%, dew point %.1f°C", dev.ID, dev.Room.Name, rec.TempC, rec.Humidity, rec.DewPointC)
+		}
 	}
 }
 
-func capturePurpleAir(csvLog *logger.CSVLogger, hosts []string, now time.Time) {
+func capturePurpleAir(csvLog *logger.CSVLogger, hosts []string, now time.Time, verbose bool) {
 	client := purpleair.NewClient(hosts)
 	for _, host := range hosts {
 		reading, err := client.Fetch(host)
@@ -153,7 +178,31 @@ func capturePurpleAir(csvLog *logger.CSVLogger, hosts []string, now time.Time) {
 		if err := csvLog.Log(rec); err != nil {
 			log.Printf("Log write error: %v", err)
 		}
-		log.Printf("  purpleair/%s (%s): %.1f°C, %.1f%%, dew point %.1f°C, PM2.5=%.1f", s.SensorID, s.Place, s.TempC, s.Humidity, s.DewPointC, s.PM25)
+		if verbose {
+			printVerboseRecord(rec)
+		} else {
+			log.Printf("  purpleair/%s (%s): %.1f°C, %.1f%%, dew point %.1f°C, PM2.5=%.1f", s.SensorID, s.Place, s.TempC, s.Humidity, s.DewPointC, s.PM25)
+		}
+	}
+}
+
+func printVerboseRecord(rec logger.Record) {
+	f := calc.CtoF
+	fmt.Printf("  %s/%s (%s)\n", rec.Source, rec.SensorID, rec.Location)
+	fmt.Printf("    Temperature: %.1f°C / %.1f°F\n", rec.TempC, f(rec.TempC))
+	fmt.Printf("    Humidity:    %.1f%%\n", rec.Humidity)
+	fmt.Printf("    Dew Point:   %.1f°C / %.1f°F\n", rec.DewPointC, f(rec.DewPointC))
+	if rec.Pressure != 0 {
+		fmt.Printf("    Pressure:    %.1f mbar\n", rec.Pressure)
+	}
+	if rec.VOC != 0 {
+		fmt.Printf("    VOC (gas):   %.1f kOhm\n", rec.VOC)
+	}
+	if rec.PM1 != 0 || rec.PM25 != 0 || rec.PM10 != 0 {
+		fmt.Printf("    PM1.0:       %.1f µg/m³\n", rec.PM1)
+		fmt.Printf("    PM2.5:       %.1f µg/m³\n", rec.PM25)
+		fmt.Printf("    PM10:        %.1f µg/m³\n", rec.PM10)
+		fmt.Printf("    AQI:         %.0f\n", rec.AQI)
 	}
 }
 
@@ -166,89 +215,4 @@ func parsePurpleAirHosts(hostsStr string) []string {
 		}
 	}
 	return hosts
-}
-
-func fetchSensibo(apiKey string) {
-	client := sensibo.NewClient(apiKey)
-
-	devices, err := client.GetDevices()
-	if err != nil {
-		log.Printf("Sensibo error: %v", err)
-		return
-	}
-
-	fmt.Printf("Sensibo: %d device(s)\n\n", len(devices))
-
-	for _, dev := range devices {
-		measurements, err := client.GetHistoricalMeasurements(dev.ID, 1)
-		if err != nil {
-			log.Printf("Warning: failed to get measurements for %s (%s): %v", dev.Room.Name, dev.ID, err)
-			continue
-		}
-
-		summary := sensibo.Summarize(dev.ID, dev.Room.Name, measurements)
-		printSensiboSummary(summary)
-	}
-}
-
-func fetchPurpleAir(hostsStr string) {
-	hosts := parsePurpleAirHosts(hostsStr)
-	client := purpleair.NewClient(hosts)
-
-	fmt.Printf("PurpleAir: %d sensor(s)\n\n", len(hosts))
-
-	for _, host := range hosts {
-		reading, err := client.Fetch(host)
-		if err != nil {
-			log.Printf("Warning: PurpleAir %s: %v", host, err)
-			continue
-		}
-
-		s := reading.Summary()
-		printPurpleAirSummary(s)
-	}
-}
-
-func printSensiboSummary(s sensibo.DeviceSummary) {
-	fmt.Printf("=== %s (%s) ===\n", s.RoomName, s.DeviceID)
-	if s.DataPoints == 0 {
-		fmt.Println("  No data available")
-		fmt.Println()
-		return
-	}
-
-	f := calc.CtoF
-	fmt.Printf("  Latest reading (%s):\n", s.Latest.Time.Local().Format("Jan 02 15:04"))
-	fmt.Printf("    Temperature: %.1f°C / %.1f°F\n", s.Latest.Temperature, f(s.Latest.Temperature))
-	fmt.Printf("    Humidity:    %.1f%%\n", s.Latest.Humidity)
-	fmt.Printf("    Dew Point:   %.1f°C / %.1f°F\n", s.Latest.DewPoint, f(s.Latest.DewPoint))
-	fmt.Println()
-	fmt.Printf("  Last 24h summary (%d data points):\n", s.DataPoints)
-	fmt.Printf("    Temperature: %.1f°C / %.1f°F avg (%.1f–%.1f°C / %.1f–%.1f°F)\n",
-		s.AvgTemp, f(s.AvgTemp), s.MinTemp, s.MaxTemp, f(s.MinTemp), f(s.MaxTemp))
-	fmt.Printf("    Humidity:    %.1f%% avg (%.1f%% – %.1f%%)\n", s.AvgHumid, s.MinHumid, s.MaxHumid)
-	fmt.Printf("    Dew Point:   %.1f°C / %.1f°F avg (%.1f–%.1f°C / %.1f–%.1f°F)\n",
-		s.AvgDewPoint, f(s.AvgDewPoint), s.MinDewPoint, s.MaxDewPoint, f(s.MinDewPoint), f(s.MaxDewPoint))
-	fmt.Println()
-}
-
-func printPurpleAirSummary(s purpleair.SensorSummary) {
-	fmt.Printf("=== PurpleAir %s (%s) ===\n", s.SensorID, s.Place)
-
-	fmt.Printf("  Environment:\n")
-	fmt.Printf("    Temperature: %.1f°C / %.1f°F\n", s.TempC, s.TempF)
-	fmt.Printf("    Humidity:    %.1f%%\n", s.Humidity)
-	fmt.Printf("    Dew Point:   %.1f°C / %.1f°F\n", s.DewPointC, s.DewPointF)
-	fmt.Printf("    Pressure:    %.1f mbar\n", s.Pressure)
-	if s.Gas680 != 0 {
-		fmt.Printf("    VOC (gas):   %.1f kOhm\n", s.Gas680)
-	}
-	fmt.Println()
-
-	fmt.Printf("  Air Quality (avg of channels A & B):\n")
-	fmt.Printf("    PM1.0:  %.1f µg/m³\n", s.PM1)
-	fmt.Printf("    PM2.5:  %.1f µg/m³  (A: %.1f, B: %.1f)\n", s.PM25, s.PM25A, s.PM25B)
-	fmt.Printf("    PM10:   %.1f µg/m³\n", s.PM10)
-	fmt.Printf("    AQI:    %.0f\n", s.AQI)
-	fmt.Println()
 }
