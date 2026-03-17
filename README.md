@@ -54,9 +54,13 @@ airquality --once --verbose           # detailed one-shot output
 
 The CSV includes: timestamp, source, sensor_id, location, temp_c, humidity, dewpoint_c, pressure, pm1, pm25, pm10, aqi, voc. Fields not applicable to a sensor type are left empty.
 
+## Dashboard
+
+In continuous mode, a web dashboard is served at `http://localhost:50233/` showing live charts of temperature, humidity, and PM2.5 from the CSV log. The page auto-refreshes every 60 seconds. A JSON API is available at `/api/data`.
+
 ## Prometheus
 
-In continuous mode, a Prometheus metrics endpoint is served at `http://localhost:50233/metrics` (configurable with `--port`).
+Prometheus metrics are served at `http://localhost:50233/metrics` (port configurable with `--port`).
 
 Exported metrics (all with `source`, `sensor_id`, `location` labels):
 

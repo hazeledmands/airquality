@@ -92,6 +92,8 @@ func main() {
 		addr := fmt.Sprintf(":%d", cfg.port)
 		mux := http.NewServeMux()
 		mux.Handle("/metrics", m.Handler())
+		mux.HandleFunc("/api/data", dataHandler(cfg.output))
+		mux.HandleFunc("/", dashboardHandler())
 		log.Printf("Prometheus metrics at http://localhost:%d/metrics", cfg.port)
 		if err := http.ListenAndServe(addr, mux); err != nil {
 			log.Fatalf("Metrics server: %v", err)

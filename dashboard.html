@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Air Quality</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+    <script src="https://cdn.jsdelivr.net/npm/luxon@3"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-luxon@1"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+            background: #0f0f1a;
+            color: #e0e0e0;
+            padding: 1.5rem 2rem;
+        }
+        h1 { font-size: 1.4rem; font-weight: 600; }
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: baseline;
+            margin-bottom: 1.5rem;
+        }
+        .status { color: #666; font-size: 0.8rem; }
+        .charts {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1rem;
+        }
+        .chart-card {
+            background: #16172a;
+            border: 1px solid #ffffff08;
+            border-radius: 10px;
+            padding: 1.25rem;
+        }
+        .chart-card.wide { grid-column: 1 / -1; }
+        .chart-card h2 {
+            font-size: 0.8rem;
+            font-weight: 500;
+            color: #888;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            margin-bottom: 0.75rem;
+        }
+        .latest-values {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 1.5rem;
+            margin-bottom: 1.5rem;
+        }
+        .sensor-card {
+            background: #16172a;
+            border: 1px solid #ffffff08;
+            border-radius: 10px;
+            padding: 1rem 1.25rem;
+            min-width: 160px;
+        }
+        .sensor-card .name {
+            font-size: 0.75rem;
+            color: #888;
+            margin-bottom: 0.4rem;
+        }
+        .sensor-card .temp {
+            font-size: 1.8rem;
+            font-weight: 300;
+        }
+        .sensor-card .details {
+            font-size: 0.8rem;
+            color: #999;
+            margin-top: 0.25rem;
+        }
+        .no-data {
+            color: #444;
+            text-align: center;
+            padding: 3rem;
+            font-size: 0.9rem;
+        }
+        @media (max-width: 700px) {
+            .charts { grid-template-columns: 1fr; }
+            .chart-card.wide { grid-column: auto; }
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>Air Quality</h1>
+        <span class="status" id="status">Loading&hellip;</span>
+    </div>
+    <div class="latest-values" id="latest"></div>
+    <div class="charts">
+        <div class="chart-card wide">
+            <h2>Temperature (&deg;C)</h2>
+            <canvas id="tempChart" height="80"></canvas>
+        </div>
+        <div class="chart-card">
+            <h2>Humidity (%)</h2>
+            <canvas id="humidityChart" height="120"></canvas>
+        </div>
+        <div class="chart-card">
+            <h2>PM2.5 (&micro;g/m&sup3;)</h2>
+            <canvas id="pmChart" height="120"></canvas>
+        </div>
+    </div>
+    <script>
+    const COLORS = ['#38bdf8','#f472b6','#34d399','#fb923c','#a78bfa','#fbbf24','#22d3ee','#e879f9'];
+    const REFRESH_MS = 60000;
+    const charts = {};
+
+    const chartOpts = (unit) => ({
+        responsive: true,
+        animation: { duration: 300 },
+        interaction: { mode: 'index', intersect: false },
+        scales: {
+            x: {
+                type: 'time',
+                time: { tooltipFormat: 'ff' },
+                ticks: { color: '#555', maxTicksLimit: 12 },
+                grid: { color: '#ffffff06' },
+            },
+            y: {
+                ticks: { color: '#555' },
+                grid: { color: '#ffffff06' },
+            },
+        },
+        plugins: {
+            legend: { labels: { color: '#999', boxWidth: 12, padding: 16 } },
+            tooltip: { backgroundColor: '#1e1e30', titleColor: '#ccc', bodyColor: '#aaa', borderColor: '#333', borderWidth: 1 },
+        },
+        elements: {
+            point: { radius: 0, hoverRadius: 4 },
+            line: { borderWidth: 2, tension: 0.3 },
+        },
+    });
+
+    function initCharts() {
+        charts.temp = new Chart(document.getElementById('tempChart'), { type: 'line', data: { datasets: [] }, options: chartOpts('°C') });
+        charts.humidity = new Chart(document.getElementById('humidityChart'), { type: 'line', data: { datasets: [] }, options: chartOpts('%') });
+        charts.pm = new Chart(document.getElementById('pmChart'), { type: 'line', data: { datasets: [] }, options: chartOpts('µg/m³') });
+    }
+
+    function makeSeries(sensor, field, colorIdx) {
+        const color = COLORS[colorIdx % COLORS.length];
+        const label = sensor.location || `${sensor.source}/${sensor.sensor_id}`;
+        const data = sensor.readings.map(r => ({ x: r.timestamp, y: r[field] }));
+        return { label, data, borderColor: color, backgroundColor: color + '18', fill: false };
+    }
+
+    function updateLatest(sensors) {
+        const el = document.getElementById('latest');
+        el.innerHTML = '';
+        sensors.forEach((s, i) => {
+            const last = s.readings[s.readings.length - 1];
+            if (!last) return;
+            const color = COLORS[i % COLORS.length];
+            const name = s.location || s.sensor_id;
+            let details = `${last.humidity.toFixed(0)}% humidity`;
+            if (last.pm25) details += ` · PM2.5 ${last.pm25.toFixed(1)}`;
+            const card = document.createElement('div');
+            card.className = 'sensor-card';
+            card.innerHTML = `
+                <div class="name" style="color:${color}">${name}</div>
+                <div class="temp">${last.temp_c.toFixed(1)}&deg;</div>
+                <div class="details">${details}</div>
+            `;
+            el.appendChild(card);
+        });
+    }
+
+    function updateCharts(data) {
+        const sensors = data.sensors || [];
+        if (!sensors.length) {
+            document.getElementById('status').textContent = 'No data yet.';
+            document.getElementById('latest').innerHTML = '<div class="no-data">Waiting for first sensor reading&hellip;</div>';
+            return;
+        }
+
+        const tempDS = [], humDS = [], pmDS = [];
+        sensors.forEach((s, i) => {
+            tempDS.push(makeSeries(s, 'temp_c', i));
+            humDS.push(makeSeries(s, 'humidity', i));
+            if (s.source === 'purpleair' || s.readings.some(r => r.pm25 > 0)) {
+                pmDS.push(makeSeries(s, 'pm25', i));
+            }
+        });
+
+        charts.temp.data.datasets = tempDS;
+        charts.humidity.data.datasets = humDS;
+        charts.pm.data.datasets = pmDS;
+        charts.temp.update();
+        charts.humidity.update();
+        charts.pm.update();
+
+        updateLatest(sensors);
+
+        const total = sensors.reduce((n, s) => n + s.readings.length, 0);
+        document.getElementById('status').textContent =
+            `${sensors.length} sensor(s) · ${total} readings · updated ${new Date().toLocaleTimeString()}`;
+    }
+
+    async function fetchData() {
+        try {
+            const resp = await fetch('/api/data');
+            const data = await resp.json();
+            updateCharts(data);
+        } catch (err) {
+            document.getElementById('status').textContent = 'Error: ' + err.message;
+        }
+    }
+
+    initCharts();
+    fetchData();
+    setInterval(fetchData, REFRESH_MS);
+    </script>
+</body>
+</html>
