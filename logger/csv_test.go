@@ -113,6 +113,96 @@ func TestCSVLogger_WritesRecords(t *testing.T) {
 	}
 }
 
+func TestCSVLogger_SkipsDuplicateSameMinute(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "test.csv")
+	l, err := NewCSVLogger(path)
+	if err != nil {
+		t.Fatalf("NewCSVLogger: %v", err)
+	}
+
+	ts1 := time.Date(2026, 3, 16, 12, 5, 0, 0, time.UTC)
+	ts2 := time.Date(2026, 3, 16, 12, 5, 30, 0, time.UTC) // same minute, different second
+
+	l.Log(Record{Timestamp: ts1, Source: "sensibo", SensorID: "abc", Location: "Office", TempC: 22.0, Humidity: 45.0, DewPointC: 10.0})
+	l.Log(Record{Timestamp: ts2, Source: "sensibo", SensorID: "abc", Location: "Office", TempC: 22.1, Humidity: 44.0, DewPointC: 9.8})
+	l.Close()
+
+	data, _ := os.ReadFile(path)
+	lines := strings.Split(strings.TrimSpace(string(data)), "\n")
+	if len(lines) != 2 {
+		t.Fatalf("expected 2 lines (header + 1 record), got %d: %s", len(lines), string(data))
+	}
+}
+
+func TestCSVLogger_AllowsDifferentMinute(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "test.csv")
+	l, err := NewCSVLogger(path)
+	if err != nil {
+		t.Fatalf("NewCSVLogger: %v", err)
+	}
+
+	ts1 := time.Date(2026, 3, 16, 12, 5, 0, 0, time.UTC)
+	ts2 := time.Date(2026, 3, 16, 12, 6, 0, 0, time.UTC) // different minute
+
+	l.Log(Record{Timestamp: ts1, Source: "sensibo", SensorID: "abc", Location: "Office", TempC: 22.0, Humidity: 45.0, DewPointC: 10.0})
+	l.Log(Record{Timestamp: ts2, Source: "sensibo", SensorID: "abc", Location: "Office", TempC: 22.1, Humidity: 44.0, DewPointC: 9.8})
+	l.Close()
+
+	data, _ := os.ReadFile(path)
+	lines := strings.Split(strings.TrimSpace(string(data)), "\n")
+	if len(lines) != 3 {
+		t.Fatalf("expected 3 lines (header + 2 records), got %d: %s", len(lines), string(data))
+	}
+}
+
+func TestCSVLogger_AllowsSameMinuteDifferentSensor(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "test.csv")
+	l, err := NewCSVLogger(path)
+	if err != nil {
+		t.Fatalf("NewCSVLogger: %v", err)
+	}
+
+	ts := time.Date(2026, 3, 16, 12, 5, 0, 0, time.UTC)
+
+	l.Log(Record{Timestamp: ts, Source: "sensibo", SensorID: "abc", Location: "Office", TempC: 22.0, Humidity: 45.0, DewPointC: 10.0})
+	l.Log(Record{Timestamp: ts, Source: "sensibo", SensorID: "def", Location: "Bedroom", TempC: 23.0, Humidity: 50.0, DewPointC: 12.0})
+	l.Close()
+
+	data, _ := os.ReadFile(path)
+	lines := strings.Split(strings.TrimSpace(string(data)), "\n")
+	if len(lines) != 3 {
+		t.Fatalf("expected 3 lines (header + 2 records), got %d: %s", len(lines), string(data))
+	}
+}
+
+func TestCSVLogger_LoadsExistingForDedup(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "test.csv")
+
+	// Write one record
+	l, err := NewCSVLogger(path)
+	if err != nil {
+		t.Fatalf("NewCSVLogger: %v", err)
+	}
+	ts := time.Date(2026, 3, 16, 12, 5, 0, 0, time.UTC)
+	l.Log(Record{Timestamp: ts, Source: "sensibo", SensorID: "abc", Location: "Office", TempC: 22.0, Humidity: 45.0, DewPointC: 10.0})
+	l.Close()
+
+	// Reopen — should load existing record and skip duplicate
+	l, err = NewCSVLogger(path)
+	if err != nil {
+		t.Fatalf("NewCSVLogger reopen: %v", err)
+	}
+	ts2 := time.Date(2026, 3, 16, 12, 5, 45, 0, time.UTC) // same minute
+	l.Log(Record{Timestamp: ts2, Source: "sensibo", SensorID: "abc", Location: "Office", TempC: 22.1, Humidity: 44.0, DewPointC: 9.8})
+	l.Close()
+
+	data, _ := os.ReadFile(path)
+	lines := strings.Split(strings.TrimSpace(string(data)), "\n")
+	if len(lines) != 2 {
+		t.Fatalf("expected 2 lines (header + 1 record, dup skipped), got %d: %s", len(lines), string(data))
+	}
+}
+
 func TestCSVLogger_AppendsToExistingFile(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "test.csv")
 
