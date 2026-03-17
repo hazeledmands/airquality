@@ -92,6 +92,8 @@
             .sensor-card { padding: 0.75rem 1rem; }
             .sensor-card .temp { font-size: 1.5rem; }
             .sensor-card .details { font-size: 0.7rem; }
+            .header { flex-direction: column; gap: 0.2rem; }
+            .status { font-size: 0.7rem; }
         }
     </style>
 </head>
@@ -125,8 +127,6 @@
     const REFRESH_MS = 60000;
     const charts = {};
 
-    const isMobile = window.matchMedia('(max-width: 600px)').matches;
-
     const chartOpts = (unit) => ({
         responsive: true,
         maintainAspectRatio: true,
@@ -136,7 +136,7 @@
             x: {
                 type: 'time',
                 time: { tooltipFormat: 'ff' },
-                ticks: { color: '#555', maxTicksLimit: isMobile ? 5 : 12, maxRotation: 0 },
+                ticks: { color: '#555', autoSkip: true, maxTicksLimit: 8, maxRotation: 0 },
                 grid: { color: '#ffffff06' },
             },
             y: {
@@ -145,7 +145,7 @@
             },
         },
         plugins: {
-            legend: { labels: { color: '#999', boxWidth: 12, padding: isMobile ? 8 : 16, font: { size: isMobile ? 10 : 12 } } },
+            legend: { labels: { color: '#999', boxWidth: 12, padding: 12 } },
             tooltip: { backgroundColor: '#1e1e30', titleColor: '#ccc', bodyColor: '#aaa', borderColor: '#333', borderWidth: 1 },
         },
         elements: {
