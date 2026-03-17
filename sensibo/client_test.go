@@ -93,6 +93,76 @@ func TestGetDevices_APIError(t *testing.T) {
 	}
 }
 
+func TestGetACStates(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/pods/abc123/acStates" {
+			t.Errorf("unexpected path: %s", r.URL.Path)
+		}
+		if r.URL.Query().Get("limit") != "20" {
+			t.Errorf("unexpected limit: %s", r.URL.Query().Get("limit"))
+		}
+		if r.URL.Query().Get("apiKey") != "test-key" {
+			t.Errorf("unexpected apiKey: %s", r.URL.Query().Get("apiKey"))
+		}
+		w.Write([]byte(`{"status":"success","result":[
+			{"id":"QRLiZw9jnJ","time":{"time":"2026-03-16T13:01:02Z","secondsAgo":1000},"status":"Success",
+			 "acState":{"on":false,"mode":"cool","targetTemperature":70,"temperatureUnit":"F","fanLevel":"quiet","swing":"fixedMiddle","horizontalSwing":"fixedCenter"},
+			 "changedProperties":["on","mode"],"reason":"AntiMold"},
+			{"id":"NMmdigja6z","time":{"time":"2026-03-16T12:55:48Z","secondsAgo":1300},"status":"Success",
+			 "acState":{"on":true,"mode":"fan","targetTemperature":70,"temperatureUnit":"F","fanLevel":"low","swing":"fixedMiddle","horizontalSwing":"fixedCenter"},
+			 "changedProperties":["mode"],"reason":"UserRequest"}
+		],"isPartial":false}`))
+	}))
+	defer srv.Close()
+
+	c := NewClient("test-key")
+	origBase := baseURL
+	defer func() { setBaseURL(origBase) }()
+	setBaseURL(srv.URL)
+
+	states, err := c.GetACStates("abc123", 20)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(states) != 2 {
+		t.Fatalf("expected 2 states, got %d", len(states))
+	}
+
+	first := states[0]
+	if first.ID != "QRLiZw9jnJ" {
+		t.Errorf("expected ID QRLiZw9jnJ, got %s", first.ID)
+	}
+	if first.Time.Time != "2026-03-16T13:01:02Z" {
+		t.Errorf("expected time 2026-03-16T13:01:02Z, got %s", first.Time.Time)
+	}
+	if first.ACState.On != false {
+		t.Errorf("expected on=false")
+	}
+	if first.ACState.Mode != "cool" {
+		t.Errorf("expected mode cool, got %s", first.ACState.Mode)
+	}
+	if first.ACState.TargetTemperature != 70 {
+		t.Errorf("expected targetTemperature 70, got %d", first.ACState.TargetTemperature)
+	}
+	if first.ACState.FanLevel != "quiet" {
+		t.Errorf("expected fanLevel quiet, got %s", first.ACState.FanLevel)
+	}
+	if first.Reason != "AntiMold" {
+		t.Errorf("expected reason AntiMold, got %s", first.Reason)
+	}
+	if len(first.ChangedProperties) != 2 {
+		t.Errorf("expected 2 changed properties, got %d", len(first.ChangedProperties))
+	}
+
+	second := states[1]
+	if second.ACState.On != true {
+		t.Errorf("expected on=true for second state")
+	}
+	if second.Reason != "UserRequest" {
+		t.Errorf("expected reason UserRequest, got %s", second.Reason)
+	}
+}
+
 func TestSummarize(t *testing.T) {
 	m := HistoricalMeasurements{
 		Temperature: []TimedValue{

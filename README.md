@@ -28,6 +28,7 @@ Usage: airquality [options]
 Options:
   -i, --interval duration   capture interval (default 1m)
   -o, --output string       output CSV file path (default "airquality.csv")
+      --ac-output string    AC state changes CSV file path (default "acstates.csv")
   -p, --port int            prometheus metrics port (default 50233)
   -v, --verbose             print detailed sensor data on each capture
       --once                capture once and exit
@@ -53,6 +54,14 @@ airquality --once --verbose           # detailed one-shot output
 ```
 
 The CSV includes: timestamp, source, sensor_id, location, temp_c, humidity, dewpoint_c, pressure, pm1, pm25, pm10, aqi, voc. Fields not applicable to a sensor type are left empty.
+
+## AC State Tracking
+
+When a Sensibo API key is configured, AC state changes (on/off, mode, target temperature, fan level, swing) are tracked in a separate CSV file (`acstates.csv` by default, configurable with `--ac-output`).
+
+Each run fetches up to 20 recent state changes per device from the Sensibo API. The command is idempotent — duplicate entries are never written, so it's safe to run repeatedly. Each state change is identified by a unique Sensibo ID.
+
+CSV columns: timestamp, device_id, room, on, mode, target_temp, temp_unit, fan_level, swing, horizontal_swing, changed_properties, reason, sensibo_id.
 
 ## Dashboard
 

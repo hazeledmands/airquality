@@ -84,6 +84,21 @@ func (c *Client) GetHistoricalMeasurements(deviceID string, days int) (Historica
 	return resp.Result, nil
 }
 
+// GetACStates returns recent AC state changes for a device.
+func (c *Client) GetACStates(deviceID string, limit int) ([]ACStateChange, error) {
+	path := fmt.Sprintf("/pods/%s/acStates?limit=%d", deviceID, limit)
+	data, err := c.get(path)
+	if err != nil {
+		return nil, fmt.Errorf("get ac states for %s: %w", deviceID, err)
+	}
+
+	var resp acStatesResponse
+	if err := json.Unmarshal(data, &resp); err != nil {
+		return nil, fmt.Errorf("parse ac states for %s: %w", deviceID, err)
+	}
+	return resp.Result, nil
+}
+
 // CtoF converts Celsius to Fahrenheit.
 // Deprecated: Use calc.CtoF instead.
 func CtoF(c float64) float64 {

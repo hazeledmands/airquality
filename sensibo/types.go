@@ -50,6 +50,33 @@ type DeviceSummary struct {
 	DataPoints  int
 }
 
+// ACState represents the state of an AC unit at a point in time.
+type ACState struct {
+	On                bool   `json:"on"`
+	Mode              string `json:"mode"`
+	TargetTemperature int    `json:"targetTemperature"`
+	TemperatureUnit   string `json:"temperatureUnit"`
+	FanLevel          string `json:"fanLevel"`
+	Swing             string `json:"swing"`
+	HorizontalSwing   string `json:"horizontalSwing"`
+}
+
+// ACStateChange is a single state change event from the API.
+type ACStateChange struct {
+	ID                string            `json:"id"`
+	Time              ACStateTime       `json:"time"`
+	Status            string            `json:"status"`
+	ACState           ACState           `json:"acState"`
+	ChangedProperties []string          `json:"changedProperties"`
+	Reason            string            `json:"reason"`
+}
+
+// ACStateTime wraps the nested time object from the API.
+type ACStateTime struct {
+	Time       string `json:"time"`
+	SecondsAgo int    `json:"secondsAgo"`
+}
+
 // API response wrappers.
 
 type devicesResponse struct {
@@ -60,4 +87,10 @@ type devicesResponse struct {
 type measurementsResponse struct {
 	Status string                 `json:"status"`
 	Result HistoricalMeasurements `json:"result"`
+}
+
+type acStatesResponse struct {
+	Status    string          `json:"status"`
+	Result    []ACStateChange `json:"result"`
+	IsPartial bool            `json:"isPartial"`
 }

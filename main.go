@@ -20,6 +20,7 @@ import (
 type config struct {
 	interval time.Duration
 	output   string
+	acOutput string
 	port     int
 	verbose  bool
 	once     bool
@@ -33,6 +34,7 @@ func parseConfig(args []string) config {
 	fs.DurationVar(&cfg.interval, "i", 1*time.Minute, "")
 	fs.StringVar(&cfg.output, "output", "airquality.csv", "")
 	fs.StringVar(&cfg.output, "o", "airquality.csv", "")
+	fs.StringVar(&cfg.acOutput, "ac-output", "acstates.csv", "")
 	fs.BoolVar(&cfg.verbose, "verbose", false, "")
 	fs.BoolVar(&cfg.verbose, "v", false, "")
 	fs.BoolVar(&cfg.once, "once", false, "")
@@ -52,6 +54,7 @@ Continuously logs air quality sensor data to a CSV file.
 Options:
   -i, --interval duration   capture interval (default 1m)
   -o, --output string       output CSV file path (default "airquality.csv")
+      --ac-output string    AC state changes CSV file path (default "acstates.csv")
   -p, --port int            prometheus metrics port (default 50233)
   -v, --verbose             print detailed sensor data on each capture
       --once                capture once and exit
@@ -81,10 +84,25 @@ func main() {
 	}
 	defer csvLog.Close()
 
+	var acLog *logger.ACStateCSVLogger
+	var acExistingIDs map[string]bool
+	if sensiboKey != "" {
+		acExistingIDs, err = logger.LoadExistingACStateIDs(cfg.acOutput)
+		if err != nil {
+			log.Fatalf("Failed to load AC state log: %v", err)
+		}
+		acLog, err = logger.NewACStateCSVLogger(cfg.acOutput)
+		if err != nil {
+			log.Fatalf("Failed to open AC state log: %v", err)
+		}
+		defer acLog.Close()
+		log.Printf("Tracking AC state changes in %s (%d existing entries)", cfg.acOutput, len(acExistingIDs))
+	}
+
 	m := metrics.New()
 
 	if cfg.once {
-		captureAll(csvLog, m, sensiboKey, purpleairHosts, cfg.verbose)
+		captureAll(csvLog, acLog, acExistingIDs, m, sensiboKey, purpleairHosts, cfg.verbose)
 		return
 	}
 
@@ -102,7 +120,7 @@ func main() {
 	}()
 
 	log.Printf("Logging to %s every %s (Ctrl+C to stop)", cfg.output, cfg.interval)
-	captureAll(csvLog, m, sensiboKey, purpleairHosts, cfg.verbose)
+	captureAll(csvLog, acLog, acExistingIDs, m, sensiboKey, purpleairHosts, cfg.verbose)
 
 	ticker := time.NewTicker(cfg.interval)
 	defer ticker.Stop()
@@ -113,7 +131,7 @@ func main() {
 	for {
 		select {
 		case <-ticker.C:
-			captureAll(csvLog, m, sensiboKey, purpleairHosts, cfg.verbose)
+			captureAll(csvLog, acLog, acExistingIDs, m, sensiboKey, purpleairHosts, cfg.verbose)
 		case <-sig:
 			log.Println("Stopping.")
 			return
@@ -121,11 +139,12 @@ func main() {
 	}
 }
 
-func captureAll(csvLog *logger.CSVLogger, m *metrics.Metrics, sensiboKey string, purpleairHosts []string, verbose bool) {
+func captureAll(csvLog *logger.CSVLogger, acLog *logger.ACStateCSVLogger, acExistingIDs map[string]bool, m *metrics.Metrics, sensiboKey string, purpleairHosts []string, verbose bool) {
 	now := time.Now()
 
 	if sensiboKey != "" {
 		captureSensibo(csvLog, m, sensiboKey, now, verbose)
+		captureACStates(acLog, acExistingIDs, sensiboKey, verbose)
 	}
 	if len(purpleairHosts) > 0 {
 		capturePurpleAir(csvLog, m, purpleairHosts, now, verbose)
@@ -205,6 +224,59 @@ func capturePurpleAir(csvLog *logger.CSVLogger, m *metrics.Metrics, hosts []stri
 			printVerboseRecord(rec)
 		} else {
 			log.Printf("  purpleair/%s (%s): %.1f°C, %.1f%%, dew point %.1f°C, PM2.5=%.1f", s.SensorID, s.Place, s.TempC, s.Humidity, s.DewPointC, s.PM25)
+		}
+	}
+}
+
+func captureACStates(acLog *logger.ACStateCSVLogger, existingIDs map[string]bool, apiKey string, verbose bool) {
+	client := sensibo.NewClient(apiKey)
+	devices, err := client.GetDevices()
+	if err != nil {
+		log.Printf("Sensibo error (AC states): %v", err)
+		return
+	}
+	for _, dev := range devices {
+		states, err := client.GetACStates(dev.ID, 20)
+		if err != nil {
+			log.Printf("Sensibo AC states %s (%s): %v", dev.Room.Name, dev.ID, err)
+			continue
+		}
+		newCount := 0
+		for _, sc := range states {
+			if existingIDs[sc.ID] {
+				continue
+			}
+			rec := logger.ACStateRecord{
+				Timestamp:         sc.Time.Time,
+				DeviceID:          dev.ID,
+				RoomName:          dev.Room.Name,
+				On:                sc.ACState.On,
+				Mode:              sc.ACState.Mode,
+				TargetTemp:        sc.ACState.TargetTemperature,
+				TempUnit:          sc.ACState.TemperatureUnit,
+				FanLevel:          sc.ACState.FanLevel,
+				Swing:             sc.ACState.Swing,
+				HorizontalSwing:   sc.ACState.HorizontalSwing,
+				ChangedProperties: strings.Join(sc.ChangedProperties, ";"),
+				Reason:            sc.Reason,
+				SensiboID:         sc.ID,
+			}
+			if err := acLog.Log(rec); err != nil {
+				log.Printf("AC state log write error: %v", err)
+				continue
+			}
+			existingIDs[sc.ID] = true
+			newCount++
+			if verbose {
+				log.Printf("  AC state: %s (%s) on=%v mode=%s temp=%d%s fan=%s reason=%s [%s]",
+					dev.Room.Name, dev.ID, sc.ACState.On, sc.ACState.Mode,
+					sc.ACState.TargetTemperature, sc.ACState.TemperatureUnit,
+					sc.ACState.FanLevel, sc.Reason,
+					strings.Join(sc.ChangedProperties, ","))
+			}
+		}
+		if newCount > 0 {
+			log.Printf("  AC states: %s — %d new state change(s) recorded", dev.Room.Name, newCount)
 		}
 	}
 }
