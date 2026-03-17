@@ -13,7 +13,9 @@
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
             background: #0f0f1a;
             color: #e0e0e0;
-            padding: 1.5rem 2rem;
+            padding: 1.5rem;
+            max-width: 1400px;
+            margin: 0 auto;
         }
         h1 { font-size: 1.4rem; font-weight: 600; }
         .header {
@@ -44,9 +46,9 @@
             margin-bottom: 0.75rem;
         }
         .latest-values {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 1.5rem;
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+            gap: 0.75rem;
             margin-bottom: 1.5rem;
         }
         .sensor-card {
@@ -54,7 +56,6 @@
             border: 1px solid #ffffff08;
             border-radius: 10px;
             padding: 1rem 1.25rem;
-            min-width: 160px;
         }
         .sensor-card .name {
             font-size: 0.75rem;
@@ -76,9 +77,21 @@
             padding: 3rem;
             font-size: 0.9rem;
         }
-        @media (max-width: 700px) {
-            .charts { grid-template-columns: 1fr; }
+        @media (max-width: 600px) {
+            body { padding: 1rem; }
+            h1 { font-size: 1.2rem; }
+            .header { margin-bottom: 1rem; }
+            .charts {
+                grid-template-columns: 1fr;
+                gap: 0.75rem;
+            }
             .chart-card.wide { grid-column: auto; }
+            .chart-card { padding: 1rem; }
+            .chart-card h2 { font-size: 0.7rem; }
+            .latest-values { gap: 0.5rem; margin-bottom: 1rem; }
+            .sensor-card { padding: 0.75rem 1rem; }
+            .sensor-card .temp { font-size: 1.5rem; }
+            .sensor-card .details { font-size: 0.7rem; }
         }
     </style>
 </head>
@@ -112,15 +125,18 @@
     const REFRESH_MS = 60000;
     const charts = {};
 
+    const isMobile = window.matchMedia('(max-width: 600px)').matches;
+
     const chartOpts = (unit) => ({
         responsive: true,
+        maintainAspectRatio: true,
         animation: { duration: 300 },
         interaction: { mode: 'index', intersect: false },
         scales: {
             x: {
                 type: 'time',
                 time: { tooltipFormat: 'ff' },
-                ticks: { color: '#555', maxTicksLimit: 12 },
+                ticks: { color: '#555', maxTicksLimit: isMobile ? 5 : 12, maxRotation: 0 },
                 grid: { color: '#ffffff06' },
             },
             y: {
@@ -129,7 +145,7 @@
             },
         },
         plugins: {
-            legend: { labels: { color: '#999', boxWidth: 12, padding: 16 } },
+            legend: { labels: { color: '#999', boxWidth: 12, padding: isMobile ? 8 : 16, font: { size: isMobile ? 10 : 12 } } },
             tooltip: { backgroundColor: '#1e1e30', titleColor: '#ccc', bodyColor: '#aaa', borderColor: '#333', borderWidth: 1 },
         },
         elements: {
