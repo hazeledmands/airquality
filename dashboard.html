@@ -89,9 +89,13 @@
     </div>
     <div class="latest-values" id="latest"></div>
     <div class="charts">
-        <div class="chart-card wide">
+        <div class="chart-card">
             <h2>Temperature (&deg;C)</h2>
-            <canvas id="tempChart" height="80"></canvas>
+            <canvas id="tempChart" height="120"></canvas>
+        </div>
+        <div class="chart-card">
+            <h2>Dew Point (&deg;C)</h2>
+            <canvas id="dewpointChart" height="120"></canvas>
         </div>
         <div class="chart-card">
             <h2>Humidity (%)</h2>
@@ -100,14 +104,6 @@
         <div class="chart-card">
             <h2>PM2.5 (&micro;g/m&sup3;)</h2>
             <canvas id="pmChart" height="120"></canvas>
-        </div>
-        <div class="chart-card">
-            <h2>Dew Point (&deg;C)</h2>
-            <canvas id="dewpointChart" height="120"></canvas>
-        </div>
-        <div class="chart-card">
-            <h2>AQI</h2>
-            <canvas id="aqiChart" height="120"></canvas>
         </div>
     </div>
     <script>
@@ -146,7 +142,6 @@
         charts.humidity = new Chart(document.getElementById('humidityChart'), { type: 'line', data: { datasets: [] }, options: chartOpts('%') });
         charts.dewpoint = new Chart(document.getElementById('dewpointChart'), { type: 'line', data: { datasets: [] }, options: chartOpts('°C') });
         charts.pm = new Chart(document.getElementById('pmChart'), { type: 'line', data: { datasets: [] }, options: chartOpts('µg/m³') });
-        charts.aqi = new Chart(document.getElementById('aqiChart'), { type: 'line', data: { datasets: [] }, options: chartOpts('') });
     }
 
     function makeSeries(sensor, field, colorIdx) {
