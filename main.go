@@ -4,6 +4,7 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"net/http"
 	"os"
 	"os/signal"
 	"strings"
@@ -11,6 +12,7 @@ import (
 
 	"github.com/hazel/airquality/calc"
 	"github.com/hazel/airquality/logger"
+	"github.com/hazel/airquality/metrics"
 	"github.com/hazel/airquality/purpleair"
 	"github.com/hazel/airquality/sensibo"
 )
@@ -18,6 +20,7 @@ import (
 type config struct {
 	interval time.Duration
 	output   string
+	port     int
 	verbose  bool
 	once     bool
 }
@@ -33,6 +36,8 @@ func parseConfig(args []string) config {
 	fs.BoolVar(&cfg.verbose, "verbose", false, "")
 	fs.BoolVar(&cfg.verbose, "v", false, "")
 	fs.BoolVar(&cfg.once, "once", false, "")
+	fs.IntVar(&cfg.port, "port", 50233, "")
+	fs.IntVar(&cfg.port, "p", 50233, "")
 
 	fs.Usage = func() { printUsage(fs) }
 	fs.Parse(args)
@@ -47,6 +52,7 @@ Continuously logs air quality sensor data to a CSV file.
 Options:
   -i, --interval duration   capture interval (default 1m)
   -o, --output string       output CSV file path (default "airquality.csv")
+  -p, --port int            prometheus metrics port (default 50233)
   -v, --verbose             print detailed sensor data on each capture
       --once                capture once and exit
   -h, --help                show this help
@@ -75,13 +81,25 @@ func main() {
 	}
 	defer csvLog.Close()
 
+	m := metrics.New()
+
 	if cfg.once {
-		captureAll(csvLog, sensiboKey, purpleairHosts, cfg.verbose)
+		captureAll(csvLog, m, sensiboKey, purpleairHosts, cfg.verbose)
 		return
 	}
 
+	go func() {
+		addr := fmt.Sprintf(":%d", cfg.port)
+		mux := http.NewServeMux()
+		mux.Handle("/metrics", m.Handler())
+		log.Printf("Prometheus metrics at http://localhost:%d/metrics", cfg.port)
+		if err := http.ListenAndServe(addr, mux); err != nil {
+			log.Fatalf("Metrics server: %v", err)
+		}
+	}()
+
 	log.Printf("Logging to %s every %s (Ctrl+C to stop)", cfg.output, cfg.interval)
-	captureAll(csvLog, sensiboKey, purpleairHosts, cfg.verbose)
+	captureAll(csvLog, m, sensiboKey, purpleairHosts, cfg.verbose)
 
 	ticker := time.NewTicker(cfg.interval)
 	defer ticker.Stop()
@@ -92,7 +110,7 @@ func main() {
 	for {
 		select {
 		case <-ticker.C:
-			captureAll(csvLog, sensiboKey, purpleairHosts, cfg.verbose)
+			captureAll(csvLog, m, sensiboKey, purpleairHosts, cfg.verbose)
 		case <-sig:
 			log.Println("Stopping.")
 			return
@@ -100,18 +118,18 @@ func main() {
 	}
 }
 
-func captureAll(csvLog *logger.CSVLogger, sensiboKey string, purpleairHosts []string, verbose bool) {
+func captureAll(csvLog *logger.CSVLogger, m *metrics.Metrics, sensiboKey string, purpleairHosts []string, verbose bool) {
 	now := time.Now()
 
 	if sensiboKey != "" {
-		captureSensibo(csvLog, sensiboKey, now, verbose)
+		captureSensibo(csvLog, m, sensiboKey, now, verbose)
 	}
 	if len(purpleairHosts) > 0 {
-		capturePurpleAir(csvLog, purpleairHosts, now, verbose)
+		capturePurpleAir(csvLog, m, purpleairHosts, now, verbose)
 	}
 }
 
-func captureSensibo(csvLog *logger.CSVLogger, apiKey string, now time.Time, verbose bool) {
+func captureSensibo(csvLog *logger.CSVLogger, m *metrics.Metrics, apiKey string, now time.Time, verbose bool) {
 	client := sensibo.NewClient(apiKey)
 	devices, err := client.GetDevices()
 	if err != nil {
@@ -143,6 +161,7 @@ func captureSensibo(csvLog *logger.CSVLogger, apiKey string, now time.Time, verb
 		if err := csvLog.Log(rec); err != nil {
 			log.Printf("Log write error: %v", err)
 		}
+		m.Update(rec)
 		if verbose {
 			printVerboseRecord(rec)
 		} else {
@@ -151,7 +170,7 @@ func captureSensibo(csvLog *logger.CSVLogger, apiKey string, now time.Time, verb
 	}
 }
 
-func capturePurpleAir(csvLog *logger.CSVLogger, hosts []string, now time.Time, verbose bool) {
+func capturePurpleAir(csvLog *logger.CSVLogger, m *metrics.Metrics, hosts []string, now time.Time, verbose bool) {
 	client := purpleair.NewClient(hosts)
 	for _, host := range hosts {
 		reading, err := client.Fetch(host)
@@ -178,6 +197,7 @@ func capturePurpleAir(csvLog *logger.CSVLogger, hosts []string, now time.Time, v
 		if err := csvLog.Log(rec); err != nil {
 			log.Printf("Log write error: %v", err)
 		}
+		m.Update(rec)
 		if verbose {
 			printVerboseRecord(rec)
 		} else {
