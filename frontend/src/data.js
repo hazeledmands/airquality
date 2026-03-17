@@ -1,0 +1,71 @@
+export const COLORS = ['#38bdf8','#f472b6','#34d399','#fb923c','#a78bfa','#fbbf24','#22d3ee','#e879f9'];
+export const REFRESH_MS = 60000;
+export const MOBILE_BREAKPOINT = 600;
+
+export function getAspectRatio(width) {
+    return width <= MOBILE_BREAKPOINT ? 1.2 : 2;
+}
+
+export function cToF(c) {
+    return c * 9 / 5 + 32;
+}
+
+export function makeSeries(sensor, field, colorIdx, transform) {
+    const color = COLORS[colorIdx % COLORS.length];
+    const label = sensor.location || `${sensor.source}/${sensor.sensor_id}`;
+    const fn = transform || (v => v);
+    const data = sensor.readings.map(r => ({ x: r.timestamp, y: fn(r[field]) }));
+    return { label, data, borderColor: color, backgroundColor: color + '18', fill: false };
+}
+
+export function filterByRange(data, from, to) {
+    if (!from && !to) return data;
+
+    const fromMs = from ? new Date(from).getTime() : -Infinity;
+    const toMs = to ? new Date(to).getTime() : Infinity;
+
+    return {
+        sensors: data.sensors.map(s => ({
+            ...s,
+            readings: s.readings.filter(r => {
+                const t = new Date(r.timestamp).getTime();
+                return t >= fromMs && t <= toMs;
+            }),
+        })).filter(s => s.readings.length > 0),
+    };
+}
+
+export function toLocalInput(d) {
+    const pad = (n) => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+export function buildDatasets(sensors) {
+    const tempDS = [], humDS = [], dewDS = [], pmDS = [];
+    sensors.forEach((s, i) => {
+        tempDS.push(makeSeries(s, 'temp_c', i, cToF));
+        humDS.push(makeSeries(s, 'humidity', i));
+        dewDS.push(makeSeries(s, 'dewpoint_c', i, cToF));
+        if (s.source === 'purpleair' || s.readings.some(r => r.pm25 > 0)) {
+            pmDS.push(makeSeries(s, 'pm25', i));
+        }
+    });
+    return { temp: tempDS, humidity: humDS, dewpoint: dewDS, pm: pmDS };
+}
+
+export function computeStatus(sensors) {
+    const total = sensors.reduce((n, s) => n + s.readings.length, 0);
+    return `${sensors.length} sensor(s) · ${total} readings`;
+}
+
+export function getDataRange(data) {
+    let minT = Infinity, maxT = -Infinity;
+    for (const s of (data.sensors || [])) {
+        for (const r of s.readings) {
+            const t = new Date(r.timestamp).getTime();
+            if (t < minT) minT = t;
+            if (t > maxT) maxT = t;
+        }
+    }
+    return minT !== Infinity ? { min: new Date(minT), max: new Date(maxT) } : null;
+}

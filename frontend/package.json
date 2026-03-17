@@ -1,0 +1,16 @@
+{
+  "name": "airquality-frontend",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build && cp dist/index.html ../dashboard.html",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "devDependencies": {
+    "vite": "^6",
+    "vite-plugin-singlefile": "^2.3",
+    "vitest": "^3"
+  }
+}

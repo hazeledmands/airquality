@@ -87,6 +87,29 @@ Exported metrics (all with `source`, `sensor_id`, `location` labels):
 
 ## Building
 
+The dashboard frontend lives in `frontend/` as ES modules bundled by Vite into a single `dashboard.html` that Go embeds at compile time.
+
 ```sh
-go build -o airquality .
+make build   # install deps (if needed), build frontend, compile Go binary
+make run     # build and start the server
+make test    # run all tests (frontend + Go)
+make clean   # remove build artifacts
+```
+
+Or manually:
+
+```sh
+npm --prefix frontend install       # install frontend dependencies (first time only)
+npm --prefix frontend run build     # build frontend (produces dashboard.html)
+go build -o airquality .            # compile Go binary
+```
+
+## Frontend tests
+
+Unit tests for the dashboard JavaScript use Vitest:
+
+```sh
+make test                            # all tests (frontend + Go)
+npm --prefix frontend test           # frontend only
+npm --prefix frontend run test:watch # frontend watch mode
 ```

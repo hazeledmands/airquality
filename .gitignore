@@ -1,8 +1,16 @@
 # Environment / secrets
+.env
 .envrc
 
 # Build output
 airquality
+
+# Frontend build artifacts
+frontend/node_modules/
+frontend/dist/
+
+# Playwright screenshots
+tmp/
 
 # Tool config
 .claude/
