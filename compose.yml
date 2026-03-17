@@ -1,0 +1,16 @@
+services:
+  dev:
+    build: .
+    volumes:
+      - .:/app
+      - ${HOST_HOME:-.}/.claude:/root/.claude
+      - ${HOST_HOME:-.}/.claude.json:/root/.claude.json
+      - ${HOST_HOME:-.}/.config/git:/root/.config/git:ro
+    network_mode: host
+    environment:
+      - SENSIBO_API_KEY
+      - PURPLEAIR_HOSTS
+      - ANTHROPIC_API_KEY
+    stdin_open: true
+    tty: true
+    command: sleep infinity
