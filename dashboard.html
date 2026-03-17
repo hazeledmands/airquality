@@ -71,6 +71,44 @@
             color: #999;
             margin-top: 0.25rem;
         }
+        .date-range {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            margin-bottom: 1rem;
+            flex-wrap: wrap;
+        }
+        .date-range label {
+            font-size: 0.75rem;
+            color: #888;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+        }
+        .date-range input[type="datetime-local"] {
+            background: #16172a;
+            border: 1px solid #ffffff15;
+            border-radius: 6px;
+            color: #e0e0e0;
+            padding: 0.35rem 0.5rem;
+            font-size: 0.8rem;
+            font-family: inherit;
+        }
+        .date-range input[type="datetime-local"]:focus {
+            outline: none;
+            border-color: #38bdf8;
+        }
+        .date-range .sep { color: #555; font-size: 0.8rem; }
+        .date-range button {
+            background: #ffffff10;
+            border: 1px solid #ffffff15;
+            border-radius: 6px;
+            color: #999;
+            padding: 0.35rem 0.75rem;
+            font-size: 0.75rem;
+            cursor: pointer;
+            font-family: inherit;
+        }
+        .date-range button:hover { background: #ffffff18; color: #ccc; }
         .no-data {
             color: #444;
             text-align: center;
@@ -94,6 +132,9 @@
             .sensor-card .details { font-size: 0.7rem; }
             .header { flex-direction: column; gap: 0.2rem; }
             .status { font-size: 0.7rem; }
+            .date-range { gap: 0.4rem; }
+            .date-range input[type="datetime-local"] { font-size: 0.75rem; padding: 0.3rem 0.4rem; }
+            .date-range label { font-size: 0.65rem; }
         }
     </style>
 </head>
@@ -101,6 +142,14 @@
     <div class="header">
         <h1>Air Quality</h1>
         <span class="status" id="status">Loading&hellip;</span>
+    </div>
+    <div class="date-range">
+        <label for="rangeFrom">From</label>
+        <input type="datetime-local" id="rangeFrom">
+        <span class="sep">&ndash;</span>
+        <label for="rangeTo">To</label>
+        <input type="datetime-local" id="rangeTo">
+        <button id="rangeReset">Reset</button>
     </div>
     <div class="latest-values" id="latest"></div>
     <div class="charts">
@@ -126,6 +175,7 @@
     const COLORS = ['#38bdf8','#f472b6','#34d399','#fb923c','#a78bfa','#fbbf24','#22d3ee','#e879f9'];
     const REFRESH_MS = 60000;
     const charts = {};
+    let allData = null;
 
     const chartOpts = (unit) => ({
         responsive: true,
@@ -224,15 +274,74 @@
             `${sensors.length} sensor(s) · ${total} readings · updated ${new Date().toLocaleTimeString()}`;
     }
 
+    function filterByRange(data) {
+        const fromVal = document.getElementById('rangeFrom').value;
+        const toVal = document.getElementById('rangeTo').value;
+        if (!fromVal && !toVal) return data;
+
+        const from = fromVal ? new Date(fromVal).getTime() : -Infinity;
+        const to = toVal ? new Date(toVal).getTime() : Infinity;
+
+        return {
+            sensors: data.sensors.map(s => ({
+                ...s,
+                readings: s.readings.filter(r => {
+                    const t = new Date(r.timestamp).getTime();
+                    return t >= from && t <= to;
+                }),
+            })).filter(s => s.readings.length > 0),
+        };
+    }
+
+    function applyFilter() {
+        if (allData) updateCharts(filterByRange(allData));
+    }
+
+    function setRangeDefaults(data) {
+        const fromEl = document.getElementById('rangeFrom');
+        const toEl = document.getElementById('rangeTo');
+        if (fromEl.value || toEl.value) return;
+
+        let minT = Infinity, maxT = -Infinity;
+        for (const s of (data.sensors || [])) {
+            for (const r of s.readings) {
+                const t = new Date(r.timestamp).getTime();
+                if (t < minT) minT = t;
+                if (t > maxT) maxT = t;
+            }
+        }
+        if (minT !== Infinity) {
+            fromEl.value = toLocalInput(new Date(minT));
+            toEl.value = toLocalInput(new Date(maxT));
+        }
+    }
+
+    function toLocalInput(d) {
+        const pad = (n) => String(n).padStart(2, '0');
+        return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+    }
+
     async function fetchData() {
         try {
             const resp = await fetch('/api/data');
-            const data = await resp.json();
-            updateCharts(data);
+            allData = await resp.json();
+            setRangeDefaults(allData);
+            updateCharts(filterByRange(allData));
         } catch (err) {
             document.getElementById('status').textContent = 'Error: ' + err.message;
         }
     }
+
+    document.getElementById('rangeFrom').addEventListener('change', applyFilter);
+    document.getElementById('rangeTo').addEventListener('change', applyFilter);
+    document.getElementById('rangeReset').addEventListener('click', () => {
+        document.getElementById('rangeFrom').value = '';
+        document.getElementById('rangeTo').value = '';
+        if (allData) {
+            setRangeDefaults(allData);
+            applyFilter();
+        }
+    });
 
     initCharts();
     fetchData();
