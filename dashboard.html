@@ -101,6 +101,14 @@
             <h2>PM2.5 (&micro;g/m&sup3;)</h2>
             <canvas id="pmChart" height="120"></canvas>
         </div>
+        <div class="chart-card">
+            <h2>Dew Point (&deg;C)</h2>
+            <canvas id="dewpointChart" height="120"></canvas>
+        </div>
+        <div class="chart-card">
+            <h2>AQI</h2>
+            <canvas id="aqiChart" height="120"></canvas>
+        </div>
     </div>
     <script>
     const COLORS = ['#38bdf8','#f472b6','#34d399','#fb923c','#a78bfa','#fbbf24','#22d3ee','#e879f9'];
@@ -136,7 +144,9 @@
     function initCharts() {
         charts.temp = new Chart(document.getElementById('tempChart'), { type: 'line', data: { datasets: [] }, options: chartOpts('°C') });
         charts.humidity = new Chart(document.getElementById('humidityChart'), { type: 'line', data: { datasets: [] }, options: chartOpts('%') });
+        charts.dewpoint = new Chart(document.getElementById('dewpointChart'), { type: 'line', data: { datasets: [] }, options: chartOpts('°C') });
         charts.pm = new Chart(document.getElementById('pmChart'), { type: 'line', data: { datasets: [] }, options: chartOpts('µg/m³') });
+        charts.aqi = new Chart(document.getElementById('aqiChart'), { type: 'line', data: { datasets: [] }, options: chartOpts('') });
     }
 
     function makeSeries(sensor, field, colorIdx) {
@@ -154,7 +164,7 @@
             if (!last) return;
             const color = COLORS[i % COLORS.length];
             const name = s.location || s.sensor_id;
-            let details = `${last.humidity.toFixed(0)}% humidity`;
+            let details = `${last.humidity.toFixed(0)}% humidity · ${last.dewpoint_c.toFixed(1)}° dew`;
             if (last.pm25) details += ` · PM2.5 ${last.pm25.toFixed(1)}`;
             const card = document.createElement('div');
             card.className = 'sensor-card';
@@ -175,10 +185,11 @@
             return;
         }
 
-        const tempDS = [], humDS = [], pmDS = [];
+        const tempDS = [], humDS = [], dewDS = [], pmDS = [];
         sensors.forEach((s, i) => {
             tempDS.push(makeSeries(s, 'temp_c', i));
             humDS.push(makeSeries(s, 'humidity', i));
+            dewDS.push(makeSeries(s, 'dewpoint_c', i));
             if (s.source === 'purpleair' || s.readings.some(r => r.pm25 > 0)) {
                 pmDS.push(makeSeries(s, 'pm25', i));
             }
@@ -186,9 +197,11 @@
 
         charts.temp.data.datasets = tempDS;
         charts.humidity.data.datasets = humDS;
+        charts.dewpoint.data.datasets = dewDS;
         charts.pm.data.datasets = pmDS;
         charts.temp.update();
         charts.humidity.update();
+        charts.dewpoint.update();
         charts.pm.update();
 
         updateLatest(sensors);
