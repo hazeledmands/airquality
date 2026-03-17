@@ -1,20 +1,33 @@
 services:
   dev:
     build: .
+    user: ${HOST_UID:-1000}:${HOST_GID:-1000}
+    cap_add:
+      - SYS_ADMIN
+    security_opt:
+      - seccomp:unconfined
+      - apparmor:unconfined
+    tmpfs:
+      - /tmp
     volumes:
       - .:/app
-      - ${HOST_HOME:-.}/.claude:/root/.claude
-      - ${HOST_HOME:-.}/.claude.json:/root/.claude.json
-      - ${HOST_HOME:-.}/.codex:/root/.codex
-      - ${HOST_HOME:-.}/.codex.json:/root/.codex.json
-      - ${HOST_HOME:-.}/.config/git:/root/.config/git:ro
+      - ${HOST_HOME:-.}/.claude:/home/dev/.claude
+      - ${HOST_HOME:-.}/.claude.json:/home/dev/.claude.json
+      - ${HOST_HOME:-.}/.codex:/home/dev/.codex
+      - ${HOST_HOME:-.}/.codex.json:/home/dev/.codex.json
+      - ${HOST_HOME:-.}/.config/git:/home/dev/.config/git:ro
     network_mode: host
     environment:
       - SENSIBO_API_KEY
       - PURPLEAIR_HOSTS
       - ANTHROPIC_API_KEY
       - OPENAI_API_KEY
-      - CODEX_HOME=/root/.codex
+      - HOME=/home/dev
+      - CLAUDE_CONFIG_DIR=/home/dev/.claude
+      - CODEX_HOME=/home/dev/.codex
+      - TMPDIR=/tmp
+      - XDG_CACHE_HOME=/tmp/.cache
+      - npm_config_cache=/tmp/.npm
     stdin_open: true
     tty: true
     command: sleep infinity
