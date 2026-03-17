@@ -59,9 +59,23 @@ PurpleAir: 1 sensor(s)
     AQI:    10
 ```
 
+## Continuous Logging
+
+Record measurements to a CSV file at regular intervals:
+
+```sh
+go run . log                              # default: 1m interval, airquality.csv
+go run . log -interval 30s -output data.csv   # custom interval and file
+```
+
+The CSV includes: timestamp, source, sensor_id, location, temp_c, humidity, dewpoint_c, pressure, pm1, pm25, pm10, aqi, voc. Fields not applicable to a sensor type are left empty.
+
+Press Ctrl+C to stop logging.
+
 ## Building
 
 ```sh
 go build -o airquality .
-./airquality
+./airquality           # one-shot summary
+./airquality log       # continuous logging
 ```
