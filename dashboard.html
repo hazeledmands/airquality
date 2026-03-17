@@ -90,11 +90,11 @@
     <div class="latest-values" id="latest"></div>
     <div class="charts">
         <div class="chart-card">
-            <h2>Temperature (&deg;C)</h2>
+            <h2>Temperature (&deg;F)</h2>
             <canvas id="tempChart" height="120"></canvas>
         </div>
         <div class="chart-card">
-            <h2>Dew Point (&deg;C)</h2>
+            <h2>Dew Point (&deg;F)</h2>
             <canvas id="dewpointChart" height="120"></canvas>
         </div>
         <div class="chart-card">
@@ -107,6 +107,7 @@
         </div>
     </div>
     <script>
+    const cToF = (c) => c * 9 / 5 + 32;
     const COLORS = ['#38bdf8','#f472b6','#34d399','#fb923c','#a78bfa','#fbbf24','#22d3ee','#e879f9'];
     const REFRESH_MS = 60000;
     const charts = {};
@@ -138,16 +139,17 @@
     });
 
     function initCharts() {
-        charts.temp = new Chart(document.getElementById('tempChart'), { type: 'line', data: { datasets: [] }, options: chartOpts('°C') });
+        charts.temp = new Chart(document.getElementById('tempChart'), { type: 'line', data: { datasets: [] }, options: chartOpts('°F') });
         charts.humidity = new Chart(document.getElementById('humidityChart'), { type: 'line', data: { datasets: [] }, options: chartOpts('%') });
-        charts.dewpoint = new Chart(document.getElementById('dewpointChart'), { type: 'line', data: { datasets: [] }, options: chartOpts('°C') });
+        charts.dewpoint = new Chart(document.getElementById('dewpointChart'), { type: 'line', data: { datasets: [] }, options: chartOpts('°F') });
         charts.pm = new Chart(document.getElementById('pmChart'), { type: 'line', data: { datasets: [] }, options: chartOpts('µg/m³') });
     }
 
-    function makeSeries(sensor, field, colorIdx) {
+    function makeSeries(sensor, field, colorIdx, transform) {
         const color = COLORS[colorIdx % COLORS.length];
         const label = sensor.location || `${sensor.source}/${sensor.sensor_id}`;
-        const data = sensor.readings.map(r => ({ x: r.timestamp, y: r[field] }));
+        const fn = transform || (v => v);
+        const data = sensor.readings.map(r => ({ x: r.timestamp, y: fn(r[field]) }));
         return { label, data, borderColor: color, backgroundColor: color + '18', fill: false };
     }
 
@@ -159,13 +161,13 @@
             if (!last) return;
             const color = COLORS[i % COLORS.length];
             const name = s.location || s.sensor_id;
-            let details = `${last.humidity.toFixed(0)}% humidity · ${last.dewpoint_c.toFixed(1)}° dew`;
+            let details = `${last.humidity.toFixed(0)}% humidity · ${cToF(last.dewpoint_c).toFixed(1)}°F dew`;
             if (last.pm25) details += ` · PM2.5 ${last.pm25.toFixed(1)}`;
             const card = document.createElement('div');
             card.className = 'sensor-card';
             card.innerHTML = `
                 <div class="name" style="color:${color}">${name}</div>
-                <div class="temp">${last.temp_c.toFixed(1)}&deg;</div>
+                <div class="temp">${cToF(last.temp_c).toFixed(1)}&deg;</div>
                 <div class="details">${details}</div>
             `;
             el.appendChild(card);
@@ -182,9 +184,9 @@
 
         const tempDS = [], humDS = [], dewDS = [], pmDS = [];
         sensors.forEach((s, i) => {
-            tempDS.push(makeSeries(s, 'temp_c', i));
+            tempDS.push(makeSeries(s, 'temp_c', i, cToF));
             humDS.push(makeSeries(s, 'humidity', i));
-            dewDS.push(makeSeries(s, 'dewpoint_c', i));
+            dewDS.push(makeSeries(s, 'dewpoint_c', i, cToF));
             if (s.source === 'purpleair' || s.readings.some(r => r.pm25 > 0)) {
                 pmDS.push(makeSeries(s, 'pm25', i));
             }
