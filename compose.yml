@@ -8,7 +8,7 @@ services:
       - seccomp:unconfined
       - apparmor:unconfined
     tmpfs:
-      - /tmp
+      - /tmp:exec
     volumes:
       - .:/app
       - ${HOST_HOME:-.}/.claude:/home/dev/.claude

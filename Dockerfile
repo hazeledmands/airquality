@@ -16,7 +16,10 @@ RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Claude Code and Codex CLI
-RUN npm install -g @anthropic-ai/claude-code @openai/codex
+RUN npm install -g @anthropic-ai/claude-code @openai/codex playwright
+
+# Install Playwright browser binaries
+RUN npx playwright install --with-deps chromium
 
 # Trust bind-mounted repos owned by a different uid
 RUN git config --global --add safe.directory '*'
