@@ -10,6 +10,12 @@ function initCharts() {
     charts.humidity = new Chart(document.getElementById('humidityChart'), { type: 'line', data: { datasets: [] }, options: chartOpts(ar) });
     charts.dewpoint = new Chart(document.getElementById('dewpointChart'), { type: 'line', data: { datasets: [] }, options: chartOpts(ar) });
     charts.pm = new Chart(document.getElementById('pmChart'), { type: 'line', data: { datasets: [] }, options: chartOpts(ar) });
+    const acStateOpts = chartOpts(ar);
+    acStateOpts.scales.y.min = -0.05;
+    acStateOpts.scales.y.max = 1.05;
+    acStateOpts.scales.y.ticks.stepSize = 1;
+    acStateOpts.scales.y.ticks.callback = (value) => value === 1 ? 'On' : value === 0 ? 'Off' : '';
+    charts.acState = new Chart(document.getElementById('acStateChart'), { type: 'line', data: { datasets: [] }, options: acStateOpts });
 }
 
 window.addEventListener('resize', () => {
@@ -43,26 +49,35 @@ function updateLatest(sensors) {
 
 function updateCharts(data) {
     const sensors = data.sensors || [];
-    if (!sensors.length) {
+    const acStates = data.ac_states || [];
+    if (!sensors.length && !acStates.length) {
         document.getElementById('status').textContent = 'No data yet.';
         document.getElementById('latest').innerHTML = '<div class="no-data">Waiting for first sensor reading&hellip;</div>';
+        charts.acState.data.datasets = [];
+        charts.acState.update();
         return;
     }
 
-    const ds = buildDatasets(sensors);
+    const ds = buildDatasets(sensors, acStates);
     charts.temp.data.datasets = ds.temp;
     charts.humidity.data.datasets = ds.humidity;
     charts.dewpoint.data.datasets = ds.dewpoint;
     charts.pm.data.datasets = ds.pm;
+    charts.acState.data.datasets = ds.acState;
     charts.temp.update();
     charts.humidity.update();
     charts.dewpoint.update();
     charts.pm.update();
+    charts.acState.update();
 
-    updateLatest(sensors);
+    if (sensors.length) {
+        updateLatest(sensors);
+    } else {
+        document.getElementById('latest').innerHTML = '<div class="no-data">Waiting for first sensor reading&hellip;</div>';
+    }
 
     document.getElementById('status').textContent =
-        computeStatus(sensors) + ` · updated ${new Date().toLocaleTimeString()}`;
+        computeStatus(sensors, acStates) + ` · updated ${new Date().toLocaleTimeString()}`;
 }
 
 function applyFilter() {

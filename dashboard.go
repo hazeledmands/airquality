@@ -15,7 +15,8 @@ import (
 var dashboardHTML string
 
 type dashboardData struct {
-	Sensors []sensorData `json:"sensors"`
+	Sensors  []sensorData   `json:"sensors"`
+	ACStates []acStateData `json:"ac_states"`
 }
 
 type sensorData struct {
@@ -38,7 +39,37 @@ type reading struct {
 	VOC       float64 `json:"voc"`
 }
 
-func parseCSVData(path string) (*dashboardData, error) {
+type acStateData struct {
+	DeviceID string          `json:"device_id"`
+	Room     string          `json:"room"`
+	Changes  []acStateChange `json:"changes"`
+}
+
+type acStateChange struct {
+	Timestamp string `json:"timestamp"`
+	On        bool   `json:"on"`
+	Mode      string `json:"mode"`
+	TargetTemp int   `json:"target_temp"`
+	TempUnit  string `json:"temp_unit"`
+	FanLevel  string `json:"fan_level"`
+	Reason    string `json:"reason"`
+}
+
+func parseCSVData(path string, acPath string) (*dashboardData, error) {
+	data, err := parseSensorCSVData(path)
+	if err != nil {
+		return nil, err
+	}
+
+	acStates, err := parseACStateCSVData(acPath)
+	if err != nil {
+		return nil, err
+	}
+	data.ACStates = acStates
+	return data, nil
+}
+
+func parseSensorCSVData(path string) (*dashboardData, error) {
 	f, err := os.Open(path)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
@@ -97,6 +128,61 @@ func parseCSVData(path string) (*dashboardData, error) {
 	return data, nil
 }
 
+func parseACStateCSVData(path string) ([]acStateData, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	defer f.Close()
+
+	r := csv.NewReader(f)
+	records, err := r.ReadAll()
+	if err != nil {
+		return nil, err
+	}
+
+	if len(records) < 2 {
+		return nil, nil
+	}
+
+	stateMap := make(map[string]*acStateData)
+	var order []string
+
+	for _, row := range records[1:] {
+		if len(row) < 13 {
+			continue
+		}
+		key := row[1]
+		state, exists := stateMap[key]
+		if !exists {
+			state = &acStateData{
+				DeviceID: row[1],
+				Room:     row[2],
+			}
+			stateMap[key] = state
+			order = append(order, key)
+		}
+		state.Changes = append(state.Changes, acStateChange{
+			Timestamp:  row[0],
+			On:         parseCSVBool(row[3]),
+			Mode:       row[4],
+			TargetTemp: parseCSVInt(row[5]),
+			TempUnit:   row[6],
+			FanLevel:   row[7],
+			Reason:     row[11],
+		})
+	}
+
+	var states []acStateData
+	for _, key := range order {
+		states = append(states, *stateMap[key])
+	}
+	return states, nil
+}
+
 func parseCSVFloat(s string) float64 {
 	if s == "" {
 		return 0
@@ -105,9 +191,22 @@ func parseCSVFloat(s string) float64 {
 	return v
 }
 
-func dataHandler(csvPath string) http.HandlerFunc {
+func parseCSVInt(s string) int {
+	if s == "" {
+		return 0
+	}
+	v, _ := strconv.Atoi(s)
+	return v
+}
+
+func parseCSVBool(s string) bool {
+	v, _ := strconv.ParseBool(s)
+	return v
+}
+
+func dataHandler(csvPath string, acPath string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		data, err := parseCSVData(csvPath)
+		data, err := parseCSVData(csvPath, acPath)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return

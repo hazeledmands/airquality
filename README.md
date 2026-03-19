@@ -65,7 +65,9 @@ CSV columns: timestamp, device_id, room, on, mode, target_temp, temp_unit, fan_l
 
 ## Dashboard
 
-In continuous mode, a web dashboard is served at `http://localhost:50233/` showing live charts of temperature, humidity, and PM2.5 from the CSV log. The page auto-refreshes every 60 seconds. A JSON API is available at `/api/data`.
+In continuous mode, a web dashboard is served at `http://localhost:50233/` showing live charts of temperature, humidity, dew point, PM2.5, and AC on/off state from the CSV logs. The page auto-refreshes every 60 seconds, includes a date-range filter, and the AC state chart is rendered as a stepped on/off timeline per room. A JSON API is available at `/api/data`.
+
+Port `50233` is the production default. When testing locally, use a different port such as `--port 50234`.
 
 ## Prometheus
 

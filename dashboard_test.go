@@ -20,7 +20,7 @@ func TestParseCSVData_GroupsBySensor(t *testing.T) {
 	f.WriteString("2026-03-16T14:45:00Z,purpleair,sensor1,outside,35.0,20.0,8.7,1014.9,1.5,2.5,2.9,10,87.9\n")
 	f.Close()
 
-	data, err := parseCSVData(f.Name())
+	data, err := parseCSVData(f.Name(), "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -71,7 +71,7 @@ func TestParseCSVData_EmptyFile(t *testing.T) {
 	f.WriteString("timestamp,source,sensor_id,location,temp_c,humidity,dewpoint_c,pressure,pm1,pm25,pm10,aqi,voc\n")
 	f.Close()
 
-	data, err := parseCSVData(f.Name())
+	data, err := parseCSVData(f.Name(), "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -81,7 +81,7 @@ func TestParseCSVData_EmptyFile(t *testing.T) {
 }
 
 func TestParseCSVData_MissingFile(t *testing.T) {
-	data, err := parseCSVData("/tmp/nonexistent-airquality-test.csv")
+	data, err := parseCSVData("/tmp/nonexistent-airquality-test.csv", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -90,18 +90,98 @@ func TestParseCSVData_MissingFile(t *testing.T) {
 	}
 }
 
-func TestDataHandler_ReturnsJSON(t *testing.T) {
-	f, err := os.CreateTemp("", "test-*.csv")
+func TestParseCSVData_IncludesACStates(t *testing.T) {
+	airFile, err := os.CreateTemp("", "air-*.csv")
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer os.Remove(f.Name())
+	defer os.Remove(airFile.Name())
 
-	f.WriteString("timestamp,source,sensor_id,location,temp_c,humidity,dewpoint_c,pressure,pm1,pm25,pm10,aqi,voc\n")
-	f.WriteString("2026-03-16T14:45:00Z,sensibo,abc123,Office,25.2,50.0,13.2,,,,,,\n")
-	f.Close()
+	acFile, err := os.CreateTemp("", "ac-*.csv")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.Remove(acFile.Name())
 
-	handler := dataHandler(f.Name())
+	if _, err := airFile.WriteString("timestamp,source,sensor_id,location,temp_c,humidity,dewpoint_c,pressure,pm1,pm25,pm10,aqi,voc\n"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := airFile.WriteString("2026-03-16T14:45:00Z,sensibo,abc123,Office,25.2,50.0,13.2,,,,,,\n"); err != nil {
+		t.Fatal(err)
+	}
+	if err := airFile.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := acFile.WriteString("timestamp,device_id,room,on,mode,target_temp,temp_unit,fan_level,swing,horizontal_swing,changed_properties,reason,sensibo_id\n"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := acFile.WriteString("2026-03-16T14:40:00Z,abc123,Office,true,cool,70,F,medium,fixedMiddle,fixedCenter,on,UserRequest,id-1\n"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := acFile.WriteString("2026-03-16T14:50:00Z,abc123,Office,false,cool,70,F,medium,fixedMiddle,fixedCenter,on,UserRequest,id-2\n"); err != nil {
+		t.Fatal(err)
+	}
+	if err := acFile.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	data, err := parseCSVData(airFile.Name(), acFile.Name())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(data.ACStates) != 1 {
+		t.Fatalf("got %d AC state series, want 1", len(data.ACStates))
+	}
+	if data.ACStates[0].Room != "Office" {
+		t.Errorf("room = %q, want Office", data.ACStates[0].Room)
+	}
+	if len(data.ACStates[0].Changes) != 2 {
+		t.Fatalf("got %d AC state changes, want 2", len(data.ACStates[0].Changes))
+	}
+	if !data.ACStates[0].Changes[0].On {
+		t.Errorf("first on = %v, want true", data.ACStates[0].Changes[0].On)
+	}
+	if data.ACStates[0].Changes[1].Mode != "cool" {
+		t.Errorf("second mode = %q, want cool", data.ACStates[0].Changes[1].Mode)
+	}
+}
+
+func TestDataHandler_ReturnsJSON(t *testing.T) {
+	airFile, err := os.CreateTemp("", "air-*.csv")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.Remove(airFile.Name())
+
+	acFile, err := os.CreateTemp("", "ac-*.csv")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.Remove(acFile.Name())
+
+	if _, err := airFile.WriteString("timestamp,source,sensor_id,location,temp_c,humidity,dewpoint_c,pressure,pm1,pm25,pm10,aqi,voc\n"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := airFile.WriteString("2026-03-16T14:45:00Z,sensibo,abc123,Office,25.2,50.0,13.2,,,,,,\n"); err != nil {
+		t.Fatal(err)
+	}
+	if err := airFile.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := acFile.WriteString("timestamp,device_id,room,on,mode,target_temp,temp_unit,fan_level,swing,horizontal_swing,changed_properties,reason,sensibo_id\n"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := acFile.WriteString("2026-03-16T14:40:00Z,abc123,Office,true,cool,70,F,medium,fixedMiddle,fixedCenter,on,UserRequest,id-1\n"); err != nil {
+		t.Fatal(err)
+	}
+	if err := acFile.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	handler := dataHandler(airFile.Name(), acFile.Name())
 	req := httptest.NewRequest("GET", "/api/data", nil)
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, req)
@@ -119,6 +199,9 @@ func TestDataHandler_ReturnsJSON(t *testing.T) {
 	}
 	if len(data.Sensors) != 1 {
 		t.Errorf("got %d sensors, want 1", len(data.Sensors))
+	}
+	if len(data.ACStates) != 1 {
+		t.Errorf("got %d ac states, want 1", len(data.ACStates))
 	}
 }
 

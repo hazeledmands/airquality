@@ -112,6 +112,16 @@ describe('filterByRange', () => {
                 ],
             },
         ],
+        ac_states: [
+            {
+                device_id: 'a',
+                room: 'Office',
+                changes: [
+                    { timestamp: '2026-03-17T08:30:00Z', on: true, mode: 'heat' },
+                    { timestamp: '2026-03-17T11:30:00Z', on: false, mode: 'heat' },
+                ],
+            },
+        ],
     };
 
     it('returns original data when no range specified', () => {
@@ -155,6 +165,13 @@ describe('filterByRange', () => {
         expect(result.sensors[0].sensor_id).toBe('a');
         expect(result.sensors[0].location).toBe('Office');
     });
+
+    it('filters AC state changes by range', () => {
+        const result = filterByRange(data, '2026-03-17T09:00:00Z', '2026-03-17T12:00:00Z');
+        expect(result.ac_states).toHaveLength(1);
+        expect(result.ac_states[0].changes).toHaveLength(1);
+        expect(result.ac_states[0].changes[0].on).toBe(false);
+    });
 });
 
 describe('toLocalInput', () => {
@@ -193,27 +210,38 @@ describe('buildDatasets', () => {
             ],
         },
     ];
+    const acStates = [
+        {
+            device_id: 'a',
+            room: 'Office',
+            changes: [
+                { timestamp: '2026-03-17T10:00:00Z', on: true, mode: 'cool' },
+                { timestamp: '2026-03-17T11:00:00Z', on: false, mode: 'cool' },
+            ],
+        },
+    ];
 
     it('returns temp, humidity, dewpoint, and pm dataset arrays', () => {
-        const ds = buildDatasets(sensors);
+        const ds = buildDatasets(sensors, acStates);
         expect(ds).toHaveProperty('temp');
         expect(ds).toHaveProperty('humidity');
         expect(ds).toHaveProperty('dewpoint');
         expect(ds).toHaveProperty('pm');
+        expect(ds).toHaveProperty('acState');
     });
 
     it('creates one temp dataset per sensor', () => {
-        const ds = buildDatasets(sensors);
+        const ds = buildDatasets(sensors, acStates);
         expect(ds.temp).toHaveLength(2);
     });
 
     it('converts temperature to Fahrenheit', () => {
-        const ds = buildDatasets(sensors);
+        const ds = buildDatasets(sensors, acStates);
         expect(ds.temp[0].data[0].y).toBeCloseTo(cToF(22));
     });
 
     it('includes PM dataset for purpleair sensors', () => {
-        const ds = buildDatasets(sensors);
+        const ds = buildDatasets(sensors, acStates);
         expect(ds.pm).toHaveLength(1);
         expect(ds.pm[0].label).toBe('Outside');
     });
@@ -227,7 +255,7 @@ describe('buildDatasets', () => {
                 readings: [{ timestamp: 't', temp_c: 20, humidity: 50, dewpoint_c: 10, pm25: 5 }],
             },
         ];
-        const ds = buildDatasets(sensorsWithPm);
+        const ds = buildDatasets(sensorsWithPm, []);
         expect(ds.pm).toHaveLength(1);
     });
 
@@ -240,8 +268,19 @@ describe('buildDatasets', () => {
                 readings: [{ timestamp: 't', temp_c: 20, humidity: 50, dewpoint_c: 10, pm25: 0 }],
             },
         ];
-        const ds = buildDatasets(sensorsNoPm);
+        const ds = buildDatasets(sensorsNoPm, []);
         expect(ds.pm).toHaveLength(0);
+    });
+
+    it('creates AC state datasets as stepped on/off series', () => {
+        const ds = buildDatasets(sensors, acStates);
+        expect(ds.acState).toHaveLength(1);
+        expect(ds.acState[0].label).toBe('Office');
+        expect(ds.acState[0].stepped).toBe(true);
+        expect(ds.acState[0].data).toEqual([
+            { x: '2026-03-17T10:00:00Z', y: 1 },
+            { x: '2026-03-17T11:00:00Z', y: 0 },
+        ]);
     });
 });
 
