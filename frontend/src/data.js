@@ -3,7 +3,7 @@ export const REFRESH_MS = 60000;
 export const MOBILE_BREAKPOINT = 600;
 
 export function getAspectRatio(width) {
-    return width <= MOBILE_BREAKPOINT ? 1.2 : 2;
+    return width <= MOBILE_BREAKPOINT ? 5 : 8;
 }
 
 export function cToF(c) {
