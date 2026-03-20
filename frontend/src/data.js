@@ -80,6 +80,39 @@ export function buildDatasets(sensors, acStates = []) {
     return { temp: tempDS, humidity: humDS, dewpoint: dewDS, pm: pmDS, acState: acStateDS };
 }
 
+export function buildRoomDatasets(sensors, acStates = []) {
+    const roomMap = new Map();
+    const makeRoom = (name, colorIdx) => ({
+        name,
+        color: COLORS[colorIdx % COLORS.length],
+        temp: [],
+        humidity: [],
+        dewpoint: [],
+        pm: [],
+        acState: [],
+    });
+
+    sensors.forEach((s, i) => {
+        const name = s.location || s.sensor_id;
+        if (!roomMap.has(name)) roomMap.set(name, makeRoom(name, i));
+        const room = roomMap.get(name);
+        room.temp.push(makeSeries(s, 'temp_c', i, cToF));
+        room.humidity.push(makeSeries(s, 'humidity', i));
+        room.dewpoint.push(makeSeries(s, 'dewpoint_c', i, cToF));
+        if (s.source === 'purpleair' || s.readings.some(r => r.pm25 > 0)) {
+            room.pm.push(makeSeries(s, 'pm25', i));
+        }
+    });
+
+    acStates.forEach((state, i) => {
+        const name = state.room || state.device_id;
+        if (!roomMap.has(name)) roomMap.set(name, makeRoom(name, i));
+        roomMap.get(name).acState.push(makeACStateSeries(state, i));
+    });
+
+    return Array.from(roomMap.values());
+}
+
 export function computeStatus(sensors, acStates = []) {
     const total = sensors.reduce((n, s) => n + s.readings.length, 0);
     const changes = acStates.reduce((n, state) => n + (state.changes || []).length, 0);

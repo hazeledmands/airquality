@@ -14,6 +14,9 @@ import (
 //go:embed dashboard.html
 var dashboardHTML string
 
+//go:embed rooms.html
+var roomsHTML string
+
 type dashboardData struct {
 	Sensors  []sensorData   `json:"sensors"`
 	ACStates []acStateData `json:"ac_states"`
@@ -220,5 +223,12 @@ func dashboardHandler() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		w.Write([]byte(dashboardHTML))
+	}
+}
+
+func roomsHandler() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.Write([]byte(roomsHTML))
 	}
 }

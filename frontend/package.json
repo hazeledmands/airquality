@@ -4,7 +4,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vite build && cp dist/index.html ../dashboard.html",
+    "build": "vite build && cp dist/index.html ../dashboard.html && vite build --config vite.rooms.config.js && cp dist-rooms/rooms.html ../rooms.html",
     "test": "vitest run",
     "test:watch": "vitest"
   },

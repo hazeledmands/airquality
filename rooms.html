@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Air Quality — By Room</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+    <script src="https://cdn.jsdelivr.net/npm/luxon@3"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-luxon@1"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+            background: #0f0f1a;
+            color: #e0e0e0;
+            padding: 1.5rem;
+        }
+        h1 { font-size: 1.4rem; font-weight: 600; }
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: baseline;
+            margin-bottom: 1.5rem;
+        }
+        .status { color: #666; font-size: 0.8rem; }
+        nav { margin-bottom: 1rem; }
+        nav a {
+            color: #38bdf8;
+            font-size: 0.8rem;
+            text-decoration: none;
+        }
+        nav a:hover { text-decoration: underline; }
+        .date-range {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            margin-bottom: 1rem;
+            flex-wrap: wrap;
+        }
+        .date-range label {
+            font-size: 0.75rem;
+            color: #888;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+        }
+        .date-range input[type="datetime-local"] {
+            background: #16172a;
+            border: 1px solid #ffffff15;
+            border-radius: 6px;
+            color: #e0e0e0;
+            padding: 0.35rem 0.5rem;
+            font-size: 0.8rem;
+            font-family: inherit;
+        }
+        .date-range input[type="datetime-local"]:focus {
+            outline: none;
+            border-color: #38bdf8;
+        }
+        .date-range .sep { color: #555; font-size: 0.8rem; }
+        .date-range button {
+            background: #ffffff10;
+            border: 1px solid #ffffff15;
+            border-radius: 6px;
+            color: #999;
+            padding: 0.35rem 0.75rem;
+            font-size: 0.75rem;
+            cursor: pointer;
+            font-family: inherit;
+        }
+        .date-range button:hover { background: #ffffff18; color: #ccc; }
+        .room-section {
+            margin-bottom: 2rem;
+        }
+        .room-section h2 {
+            font-size: 1.1rem;
+            font-weight: 600;
+            margin-bottom: 0.75rem;
+            padding-bottom: 0.5rem;
+            border-bottom: 1px solid #ffffff10;
+        }
+        .room-charts {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 0.75rem;
+        }
+        .chart-card {
+            background: #16172a;
+            border: 1px solid #ffffff08;
+            border-radius: 10px;
+            padding: 1.25rem;
+            overflow: hidden;
+        }
+        .chart-card h3 {
+            font-size: 0.8rem;
+            font-weight: 500;
+            color: #888;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            margin-bottom: 0.75rem;
+        }
+        .room-latest {
+            display: flex;
+            gap: 1.5rem;
+            flex-wrap: wrap;
+            margin-bottom: 0.75rem;
+            font-size: 0.85rem;
+            color: #bbb;
+        }
+        .room-latest .value { color: #e0e0e0; font-weight: 500; }
+        .no-data {
+            color: #444;
+            text-align: center;
+            padding: 3rem;
+            font-size: 0.9rem;
+        }
+        #rooms-container:empty::after {
+            content: 'Waiting for first sensor reading\2026';
+            display: block;
+            color: #444;
+            text-align: center;
+            padding: 3rem;
+            font-size: 0.9rem;
+        }
+        @media (max-width: 600px) {
+            body { padding: 1rem; }
+            h1 { font-size: 1.2rem; }
+            .header { flex-direction: column; gap: 0.2rem; margin-bottom: 1rem; }
+            .status { font-size: 0.7rem; }
+            .room-section h2 { font-size: 1rem; }
+            .room-charts { gap: 0.5rem; }
+            .chart-card { padding: 1rem; }
+            .chart-card h3 { font-size: 0.7rem; }
+            .date-range { gap: 0.4rem; }
+            .date-range input[type="datetime-local"] { font-size: 0.75rem; padding: 0.3rem 0.4rem; }
+            .date-range label { font-size: 0.65rem; }
+            .room-latest { font-size: 0.75rem; gap: 1rem; }
+        }
+    </style>
+  <script type="module" crossorigin>(function(){const n=document.createElement("link").relList;if(n&&n.supports&&n.supports("modulepreload"))return;for(const e of document.querySelectorAll('link[rel="modulepreload"]'))c(e);new MutationObserver(e=>{for(const t of e)if(t.type==="childList")for(const s of t.addedNodes)s.tagName==="LINK"&&s.rel==="modulepreload"&&c(s)}).observe(document,{childList:!0,subtree:!0});function a(e){const t={};return e.integrity&&(t.integrity=e.integrity),e.referrerPolicy&&(t.referrerPolicy=e.referrerPolicy),e.crossOrigin==="use-credentials"?t.credentials="include":e.crossOrigin==="anonymous"?t.credentials="omit":t.credentials="same-origin",t}function c(e){if(e.ep)return;e.ep=!0;const t=a(e);fetch(e.href,t)}})();const f=["#38bdf8","#f472b6","#34d399","#fb923c","#a78bfa","#fbbf24","#22d3ee","#e879f9"],x=6e4,F=600;function b(o){return o<=F?5:8}function w(o){return o*9/5+32}function y(o,n,a,c){const e=f[a%f.length],t=o.location||`${o.source}/${o.sensor_id}`,s=c||(i=>i),r=o.readings.map(i=>({x:i.timestamp,y:s(i[n])}));return{label:t,data:r,borderColor:e,backgroundColor:e+"18",fill:!1}}function L(o,n){const a=f[n%f.length],c=o.room||o.device_id,e=(o.changes||[]).map(t=>({x:t.timestamp,y:t.on?1:0})).sort((t,s)=>new Date(t.x).getTime()-new Date(s.x).getTime());return{label:c,data:e,borderColor:a,backgroundColor:a+"18",fill:!1,stepped:!0,tension:0}}function T(o,n,a){if(!n&&!a)return o;const c=n?new Date(n).getTime():-1/0,e=a?new Date(a).getTime():1/0;return{sensors:o.sensors.map(t=>({...t,readings:t.readings.filter(s=>{const r=new Date(s.timestamp).getTime();return r>=c&&r<=e})})).filter(t=>t.readings.length>0),ac_states:(o.ac_states||[]).map(t=>({...t,changes:(t.changes||[]).filter(s=>{const r=new Date(s.timestamp).getTime();return r>=c&&r<=e})})).filter(t=>t.changes.length>0)}}function E(o){const n=a=>String(a).padStart(2,"0");return`${o.getFullYear()}-${n(o.getMonth()+1)}-${n(o.getDate())}T${n(o.getHours())}:${n(o.getMinutes())}`}function R(o,n=[]){const a=new Map,c=(e,t)=>({name:e,color:f[t%f.length],temp:[],humidity:[],dewpoint:[],pm:[],acState:[]});return o.forEach((e,t)=>{const s=e.location||e.sensor_id;a.has(s)||a.set(s,c(s,t));const r=a.get(s);r.temp.push(y(e,"temp_c",t,w)),r.humidity.push(y(e,"humidity",t)),r.dewpoint.push(y(e,"dewpoint_c",t,w)),(e.source==="purpleair"||e.readings.some(i=>i.pm25>0))&&r.pm.push(y(e,"pm25",t))}),n.forEach((e,t)=>{const s=e.room||e.device_id;a.has(s)||a.set(s,c(s,t)),a.get(s).acState.push(L(e,t))}),Array.from(a.values())}function $(o,n=[]){const a=o.reduce((e,t)=>e+t.readings.length,0),c=n.reduce((e,t)=>e+(t.changes||[]).length,0);return c?`${o.length} sensor(s) · ${a} readings · ${c} AC change(s)`:`${o.length} sensor(s) · ${a} readings`}function O(o){let n=1/0,a=-1/0;for(const c of o.sensors||[])for(const e of c.readings){const t=new Date(e.timestamp).getTime();t<n&&(n=t),t>a&&(a=t)}for(const c of o.ac_states||[])for(const e of c.changes||[]){const t=new Date(e.timestamp).getTime();t<n&&(n=t),t>a&&(a=t)}return n!==1/0?{min:new Date(n),max:new Date(a)}:null}function g(o){return{responsive:!0,maintainAspectRatio:!0,aspectRatio:o,animation:{duration:300},interaction:{mode:"index",intersect:!1},scales:{x:{type:"time",time:{tooltipFormat:"ff"},ticks:{color:"#555",autoSkip:!0,maxTicksLimit:8,maxRotation:0},grid:{color:"#ffffff06"}},y:{ticks:{color:"#555"},grid:{color:"#ffffff06"}}},plugins:{legend:{labels:{color:"#999",boxWidth:12,padding:12}},tooltip:{backgroundColor:"#1e1e30",titleColor:"#ccc",bodyColor:"#aaa",borderColor:"#333",borderWidth:1}},elements:{point:{radius:0,hoverRadius:4},line:{borderWidth:2,tension:.3}}}}let p=null,u=[];function M(o){const n=g(o);return n.scales.y.min=-.05,n.scales.y.max=1.05,n.scales.y.ticks.stepSize=1,n.scales.y.ticks.callback=a=>a===1?"On":a===0?"Off":"",n}function D(o){const n=document.getElementById("rooms-container");n.innerHTML="",u=[];const a=b(window.innerWidth);for(const c of o){const e=document.createElement("div");e.className="room-section";const t=document.createElement("h2");t.style.color=c.color,t.textContent=c.name,e.appendChild(t);const s=document.createElement("div");s.className="room-latest",s.dataset.room=c.name,e.appendChild(s);const r=document.createElement("div");r.className="room-charts";const i={},l=h("Temperature (°F)");r.appendChild(l.card),i.temp=new Chart(l.canvas,{type:"line",data:{datasets:[]},options:g(a)});const m=h("Humidity (%)");r.appendChild(m.card),i.humidity=new Chart(m.canvas,{type:"line",data:{datasets:[]},options:g(a)});const C=h("Dew Point (°F)");if(r.appendChild(C.card),i.dewpoint=new Chart(C.canvas,{type:"line",data:{datasets:[]},options:g(a)}),c.pm.length){const d=h("PM2.5 (µg/m³)");r.appendChild(d.card),i.pm=new Chart(d.canvas,{type:"line",data:{datasets:[]},options:g(a)})}if(c.acState.length){const d=h("AC State");r.appendChild(d.card),i.acState=new Chart(d.canvas,{type:"line",data:{datasets:[]},options:M(a)})}e.appendChild(r),n.appendChild(e),u.push({room:c.name,charts:i})}}function h(o){const n=document.createElement("div");n.className="chart-card";const a=document.createElement("h3");a.textContent=o,n.appendChild(a);const c=document.createElement("canvas");return n.appendChild(c),{card:n,canvas:c}}function _(o){var n,a,c,e;for(const t of o){const s=document.querySelector(`.room-latest[data-room="${t.name}"]`);if(!s)continue;const r=(n=t.temp[0])==null?void 0:n.data,i=(a=t.humidity[0])==null?void 0:a.data,l=(c=t.dewpoint[0])==null?void 0:c.data,m=(e=t.pm[0])==null?void 0:e.data;if(!(r!=null&&r.length)){s.innerHTML="";continue}const d=[`<span><span class="value">${r[r.length-1].y.toFixed(1)}°F</span></span>`];i!=null&&i.length&&d.push(`<span><span class="value">${i[i.length-1].y.toFixed(0)}%</span> humidity</span>`),l!=null&&l.length&&d.push(`<span><span class="value">${l[l.length-1].y.toFixed(1)}°F</span> dew point</span>`),m!=null&&m.length&&d.push(`<span>PM2.5 <span class="value">${m[m.length-1].y.toFixed(1)}</span></span>`),s.innerHTML=d.join("")}}function B(o){const n=o.sensors||[],a=o.ac_states||[];if(!n.length&&!a.length){document.getElementById("status").textContent="No data yet.";const s=document.getElementById("rooms-container");s.innerHTML='<div class="no-data">Waiting for first sensor reading&hellip;</div>',u=[];return}const c=R(n,a),e=u.map(s=>s.room),t=c.map(s=>s.name);if(e.length!==t.length||e.some((s,r)=>s!==t[r])){for(const s of u)for(const r of Object.values(s.charts))r.destroy();D(c)}for(const s of c){const r=u.find(i=>i.room===s.name);r&&(r.charts.temp.data.datasets=s.temp,r.charts.temp.update(),r.charts.humidity.data.datasets=s.humidity,r.charts.humidity.update(),r.charts.dewpoint.data.datasets=s.dewpoint,r.charts.dewpoint.update(),r.charts.pm&&(r.charts.pm.data.datasets=s.pm,r.charts.pm.update()),r.charts.acState&&(r.charts.acState.data.datasets=s.acState,r.charts.acState.update()))}_(c),document.getElementById("status").textContent=$(n,a)+` · updated ${new Date().toLocaleTimeString()}`}window.addEventListener("resize",()=>{const o=b(window.innerWidth);for(const n of u)for(const a of Object.values(n.charts))a.options.aspectRatio=o,a.update()});function v(){if(p){const o=document.getElementById("rangeFrom").value,n=document.getElementById("rangeTo").value;B(T(p,o,n))}}function I(o){const n=document.getElementById("rangeFrom"),a=document.getElementById("rangeTo");if(n.value||a.value)return;const c=O(o);c&&(n.value=E(c.min),a.value=E(c.max))}async function S(){try{p=await(await fetch("/api/data")).json(),I(p);const n=document.getElementById("rangeFrom").value,a=document.getElementById("rangeTo").value;B(T(p,n,a))}catch(o){document.getElementById("status").textContent="Error: "+o.message}}document.getElementById("rangeFrom").addEventListener("change",v);document.getElementById("rangeTo").addEventListener("change",v);document.getElementById("rangeReset").addEventListener("click",()=>{document.getElementById("rangeFrom").value="",document.getElementById("rangeTo").value="",p&&(I(p),v())});S();setInterval(S,x);</script>
+</head>
+<body>
+    <div class="header">
+        <h1>Air Quality &mdash; By Room</h1>
+        <span class="status" id="status">Loading&hellip;</span>
+    </div>
+    <nav><a href="/">&larr; View by metric</a></nav>
+    <div class="date-range">
+        <label for="rangeFrom">From</label>
+        <input type="datetime-local" id="rangeFrom">
+        <span class="sep">&ndash;</span>
+        <label for="rangeTo">To</label>
+        <input type="datetime-local" id="rangeTo">
+        <button id="rangeReset">Reset</button>
+    </div>
+    <div id="rooms-container"></div>
+</body>
+</html>

@@ -8,6 +8,7 @@ import {
     filterByRange,
     toLocalInput,
     buildDatasets,
+    buildRoomDatasets,
     computeStatus,
     getDataRange,
     getAspectRatio,
@@ -367,5 +368,89 @@ describe('constants', () => {
 
     it('REFRESH_MS is 60 seconds', () => {
         expect(REFRESH_MS).toBe(60000);
+    });
+});
+
+describe('buildRoomDatasets', () => {
+    const sensors = [
+        {
+            source: 'sensibo',
+            sensor_id: 'a',
+            location: 'Office',
+            readings: [
+                { timestamp: '2026-03-17T10:00:00Z', temp_c: 22, humidity: 45, dewpoint_c: 10, pm25: 0 },
+            ],
+        },
+        {
+            source: 'sensibo',
+            sensor_id: 'b',
+            location: 'Bedroom',
+            readings: [
+                { timestamp: '2026-03-17T10:00:00Z', temp_c: 20, humidity: 55, dewpoint_c: 11, pm25: 0 },
+            ],
+        },
+        {
+            source: 'purpleair',
+            sensor_id: 'c',
+            location: 'Outside',
+            readings: [
+                { timestamp: '2026-03-17T10:00:00Z', temp_c: 18, humidity: 60, dewpoint_c: 8, pm25: 12.5 },
+            ],
+        },
+    ];
+    const acStates = [
+        {
+            device_id: 'a',
+            room: 'Office',
+            changes: [
+                { timestamp: '2026-03-17T10:00:00Z', on: true },
+                { timestamp: '2026-03-17T11:00:00Z', on: false },
+            ],
+        },
+    ];
+
+    it('returns an array with one entry per room', () => {
+        const rooms = buildRoomDatasets(sensors, acStates);
+        expect(rooms).toHaveLength(3);
+    });
+
+    it('each entry has name, color, and dataset arrays', () => {
+        const rooms = buildRoomDatasets(sensors, acStates);
+        const office = rooms.find(r => r.name === 'Office');
+        expect(office).toBeDefined();
+        expect(office.color).toBe(COLORS[0]);
+        expect(office.temp).toHaveLength(1);
+        expect(office.humidity).toHaveLength(1);
+        expect(office.dewpoint).toHaveLength(1);
+    });
+
+    it('includes PM datasets only for sensors with PM data', () => {
+        const rooms = buildRoomDatasets(sensors, acStates);
+        const office = rooms.find(r => r.name === 'Office');
+        const outside = rooms.find(r => r.name === 'Outside');
+        expect(office.pm).toHaveLength(0);
+        expect(outside.pm).toHaveLength(1);
+    });
+
+    it('attaches AC state to the matching room', () => {
+        const rooms = buildRoomDatasets(sensors, acStates);
+        const office = rooms.find(r => r.name === 'Office');
+        const bedroom = rooms.find(r => r.name === 'Bedroom');
+        expect(office.acState).toHaveLength(1);
+        expect(office.acState[0].stepped).toBe(true);
+        expect(bedroom.acState).toHaveLength(0);
+    });
+
+    it('preserves sensor order', () => {
+        const rooms = buildRoomDatasets(sensors, acStates);
+        expect(rooms[0].name).toBe('Office');
+        expect(rooms[1].name).toBe('Bedroom');
+        expect(rooms[2].name).toBe('Outside');
+    });
+
+    it('converts temperature to Fahrenheit', () => {
+        const rooms = buildRoomDatasets(sensors, acStates);
+        const office = rooms.find(r => r.name === 'Office');
+        expect(office.temp[0].data[0].y).toBeCloseTo(cToF(22));
     });
 });
