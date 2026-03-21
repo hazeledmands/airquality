@@ -1,17 +1,10 @@
 services:
-  proxy:
-    image: ubuntu/squid
-    volumes:
-      - ./proxy/squid.conf:/etc/squid/squid.conf:ro
-    networks:
-      - devnet
-    restart: unless-stopped
-
   dev:
     build: .
-    user: ${HOST_UID:-1000}:${HOST_GID:-1000}
     cap_add:
       - SYS_ADMIN
+      - NET_ADMIN
+      - NET_RAW
     security_opt:
       - seccomp:unconfined
       - apparmor:unconfined
@@ -34,14 +27,13 @@ services:
       - ANTHROPIC_API_KEY
       - OPENAI_API_KEY
       - HOME=/home/dev
+      - HOST_UID=${HOST_UID:-1000}
+      - HOST_GID=${HOST_GID:-1000}
       - CODEX_HOME=/home/dev/.codex
       - TMPDIR=/tmp
       - XDG_CACHE_HOME=/tmp/.cache
       - npm_config_cache=/tmp/.npm
       - PLAYWRIGHT_BROWSERS_PATH=/opt/playwright
-      - HTTP_PROXY=http://proxy:3128
-      - HTTPS_PROXY=http://proxy:3128
-      - NO_PROXY=localhost,127.0.0.0/8,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16
     stdin_open: true
     tty: true
     command: sleep infinity

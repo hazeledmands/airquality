@@ -7,6 +7,10 @@ RUN apt-get update \
         curl \
         dnsutils \
         git \
+        gosu \
+        ipset \
+        iptables \
+        iproute2 \
         iputils-ping \
         jq \
         less \
@@ -38,7 +42,7 @@ RUN mkdir -p /home/dev && chmod 777 /home/dev \
 # Trust bind-mounted repos owned by a different uid
 RUN git config --global --add safe.directory '*'
 
-COPY entrypoint.sh /usr/local/bin/
+COPY entrypoint.sh init-firewall.sh /usr/local/bin/
 ENTRYPOINT ["entrypoint.sh"]
 
 WORKDIR /app
