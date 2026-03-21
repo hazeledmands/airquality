@@ -1,16 +1,142 @@
 import { REFRESH_MS, cToF, filterByRange, toLocalInput, buildRoomDatasets, computeStatus, getDataRange, getAspectRatio } from './data.js';
-import { chartOpts } from './charts.js';
+
+const METRIC_COLORS = {
+    temp:     '#fb923c', // orange
+    dewpoint: '#38bdf8', // blue
+    humidity: '#34d399', // green
+    pm:       '#a78bfa', // purple
+    acState:  '#555555', // gray
+};
 
 let allData = null;
-let roomCharts = []; // { room, charts: { temp, humidity, dewpoint, pm?, acState? } }
+let roomCharts = []; // { room, chart }
 
-function makeAcStateOpts(ar) {
-    const opts = chartOpts(ar);
-    opts.scales.y.min = -0.05;
-    opts.scales.y.max = 1.05;
-    opts.scales.y.ticks.stepSize = 1;
-    opts.scales.y.ticks.callback = (value) => value === 1 ? 'On' : value === 0 ? 'Off' : '';
+function combinedChartOpts(ar, room) {
+    const hasPM = room.pm.length > 0;
+    const hasAC = room.acState.length > 0;
+
+    const opts = {
+        responsive: true,
+        maintainAspectRatio: true,
+        aspectRatio: ar,
+        animation: { duration: 300 },
+        interaction: { mode: 'index', intersect: false },
+        scales: {
+            x: {
+                type: 'time',
+                time: { tooltipFormat: 'ff' },
+                ticks: { color: '#555', autoSkip: true, maxTicksLimit: 8, maxRotation: 0 },
+                grid: { color: '#ffffff06' },
+            },
+            y: {
+                type: 'linear',
+                position: 'left',
+                title: { display: true, text: '\u00B0F', color: '#888', font: { size: 11 } },
+                ticks: { color: '#888' },
+                grid: { color: '#ffffff06' },
+            },
+            y1: {
+                type: 'linear',
+                position: 'right',
+                title: { display: true, text: '%', color: '#888', font: { size: 11 } },
+                ticks: { color: '#888' },
+                grid: { drawOnChartArea: false },
+                min: 0,
+                max: 100,
+            },
+        },
+        plugins: {
+            legend: { labels: { color: '#999', boxWidth: 12, padding: 12 } },
+            tooltip: { backgroundColor: '#1e1e30', titleColor: '#ccc', bodyColor: '#aaa', borderColor: '#333', borderWidth: 1 },
+        },
+        elements: {
+            point: { radius: 0, hoverRadius: 4 },
+            line: { borderWidth: 2, tension: 0.3 },
+        },
+    };
+
+    if (hasPM) {
+        opts.scales.y2 = {
+            type: 'linear',
+            position: 'right',
+            title: { display: true, text: '\u00B5g/m\u00B3', color: '#888', font: { size: 11 } },
+            ticks: { color: '#888' },
+            grid: { drawOnChartArea: false },
+        };
+    }
+
+    if (hasAC) {
+        opts.scales.y3 = {
+            type: 'linear',
+            position: 'right',
+            display: false,
+            min: -0.05,
+            max: 1.05,
+        };
+    }
+
     return opts;
+}
+
+function buildCombinedDatasets(room) {
+    const datasets = [];
+
+    for (const ds of room.temp) {
+        datasets.push({
+            ...ds,
+            label: 'Temperature',
+            yAxisID: 'y',
+            borderColor: METRIC_COLORS.temp,
+            backgroundColor: METRIC_COLORS.temp + '18',
+        });
+    }
+
+    for (const ds of room.dewpoint) {
+        datasets.push({
+            ...ds,
+            label: 'Dew Point',
+            yAxisID: 'y',
+            borderColor: METRIC_COLORS.dewpoint,
+            backgroundColor: METRIC_COLORS.dewpoint + '18',
+            borderDash: [5, 3],
+        });
+    }
+
+    for (const ds of room.humidity) {
+        datasets.push({
+            ...ds,
+            label: 'Humidity',
+            yAxisID: 'y1',
+            borderColor: METRIC_COLORS.humidity,
+            backgroundColor: METRIC_COLORS.humidity + '18',
+        });
+    }
+
+    for (const ds of room.pm) {
+        datasets.push({
+            ...ds,
+            label: 'PM2.5',
+            yAxisID: 'y2',
+            borderColor: METRIC_COLORS.pm,
+            backgroundColor: METRIC_COLORS.pm + '18',
+        });
+    }
+
+    for (const ds of room.acState) {
+        datasets.push({
+            ...ds,
+            label: 'AC',
+            yAxisID: 'y3',
+            borderColor: METRIC_COLORS.acState,
+            backgroundColor: METRIC_COLORS.acState + '18',
+            fill: true,
+            borderWidth: 1,
+            stepped: true,
+            tension: 0,
+        });
+    }
+
+    return datasets;
 }
 
 function buildRoomDOM(rooms) {
@@ -33,62 +159,27 @@ function buildRoomDOM(rooms) {
         latest.dataset.room = room.name;
         section.appendChild(latest);
 
-        const grid = document.createElement('div');
-        grid.className = 'room-charts';
+        const card = document.createElement('div');
+        card.className = 'chart-card';
+        const canvas = document.createElement('canvas');
+        card.appendChild(canvas);
+        section.appendChild(card);
 
-        const charts = {};
+        const chart = new Chart(canvas, {
+            type: 'line',
+            data: { datasets: [] },
+            options: combinedChartOpts(ar, room),
+        });
 
-        // Temperature
-        const tempCard = makeChartCard('Temperature (\u00B0F)');
-        grid.appendChild(tempCard.card);
-        charts.temp = new Chart(tempCard.canvas, { type: 'line', data: { datasets: [] }, options: chartOpts(ar) });
-
-        // Humidity
-        const humCard = makeChartCard('Humidity (%)');
-        grid.appendChild(humCard.card);
-        charts.humidity = new Chart(humCard.canvas, { type: 'line', data: { datasets: [] }, options: chartOpts(ar) });
-
-        // Dew Point
-        const dewCard = makeChartCard('Dew Point (\u00B0F)');
-        grid.appendChild(dewCard.card);
-        charts.dewpoint = new Chart(dewCard.canvas, { type: 'line', data: { datasets: [] }, options: chartOpts(ar) });
-
-        // PM2.5 (only if data exists)
-        if (room.pm.length) {
-            const pmCard = makeChartCard('PM2.5 (\u00B5g/m\u00B3)');
-            grid.appendChild(pmCard.card);
-            charts.pm = new Chart(pmCard.canvas, { type: 'line', data: { datasets: [] }, options: chartOpts(ar) });
-        }
-
-        // AC State (only if data exists)
-        if (room.acState.length) {
-            const acCard = makeChartCard('AC State');
-            grid.appendChild(acCard.card);
-            charts.acState = new Chart(acCard.canvas, { type: 'line', data: { datasets: [] }, options: makeAcStateOpts(ar) });
-        }
-
-        section.appendChild(grid);
         container.appendChild(section);
-        roomCharts.push({ room: room.name, charts });
+        roomCharts.push({ room: room.name, chart });
     }
-}
-
-function makeChartCard(title) {
-    const card = document.createElement('div');
-    card.className = 'chart-card';
-    const h3 = document.createElement('h3');
-    h3.textContent = title;
-    card.appendChild(h3);
-    const canvas = document.createElement('canvas');
-    card.appendChild(canvas);
-    return { card, canvas };
 }
 
 function updateLatestValues(rooms) {
     for (const room of rooms) {
         const el = document.querySelector(`.room-latest[data-room="${room.name}"]`);
         if (!el) continue;
-        // Get latest reading from the first temp dataset
         const tempData = room.temp[0]?.data;
         const humData = room.humidity[0]?.data;
         const dewData = room.dewpoint[0]?.data;
@@ -128,10 +219,7 @@ function updateCharts(data) {
     const currentRooms = roomCharts.map(rc => rc.room);
     const newRooms = rooms.map(r => r.name);
     if (currentRooms.length !== newRooms.length || currentRooms.some((r, i) => r !== newRooms[i])) {
-        // Destroy old charts
-        for (const rc of roomCharts) {
-            for (const chart of Object.values(rc.charts)) chart.destroy();
-        }
+        for (const rc of roomCharts) rc.chart.destroy();
         buildRoomDOM(rooms);
     }
 
@@ -139,20 +227,8 @@ function updateCharts(data) {
     for (const room of rooms) {
         const rc = roomCharts.find(r => r.room === room.name);
         if (!rc) continue;
-        rc.charts.temp.data.datasets = room.temp;
-        rc.charts.temp.update();
-        rc.charts.humidity.data.datasets = room.humidity;
-        rc.charts.humidity.update();
-        rc.charts.dewpoint.data.datasets = room.dewpoint;
-        rc.charts.dewpoint.update();
-        if (rc.charts.pm) {
-            rc.charts.pm.data.datasets = room.pm;
-            rc.charts.pm.update();
-        }
-        if (rc.charts.acState) {
-            rc.charts.acState.data.datasets = room.acState;
-            rc.charts.acState.update();
-        }
+        rc.chart.data.datasets = buildCombinedDatasets(room);
+        rc.chart.update();
     }
 
     updateLatestValues(rooms);
@@ -163,10 +239,8 @@ function updateCharts(data) {
 window.addEventListener('resize', () => {
     const ar = getAspectRatio(window.innerWidth);
     for (const rc of roomCharts) {
-        for (const chart of Object.values(rc.charts)) {
-            chart.options.aspectRatio = ar;
-            chart.update();
-        }
+        rc.chart.options.aspectRatio = ar;
+        rc.chart.update();
     }
 });
 
