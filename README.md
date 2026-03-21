@@ -87,6 +87,22 @@ Exported metrics (all with `source`, `sensor_id`, `location` labels):
 | `airquality_aqi` | Air Quality Index |
 | `airquality_voc_kohm` | VOC gas resistance |
 
+## Dev Container
+
+A Docker-based development environment is available with Claude Code, Go, Node.js, and network isolation (iptables firewall allowing only the project's API domains).
+
+```sh
+bin/dev-container up -d --build          # build and start
+bin/dev-container exec dev claude        # Claude Code inside container
+bin/dev-container exec dev go test ./... # run Go tests
+bin/dev-container exec dev bash          # interactive shell
+bin/dev-container down                   # stop
+```
+
+The wrapper script (`bin/dev-container`) handles UID/GID mapping so files created inside the container are owned by your host user. Source code is bind-mounted at `/app` — edits inside the container appear on the host and vice versa.
+
+Environment variables (`SENSIBO_API_KEY`, `PURPLEAIR_HOSTS`, etc.) are passed through from the host. The app port is mapped at `50234` to avoid conflicting with a production instance on `50233`.
+
 ## Building
 
 The dashboard frontend lives in `frontend/` as ES modules bundled by Vite into single-file HTML pages (`dashboard.html` and `rooms.html`) that Go embeds at compile time.
