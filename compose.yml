@@ -1,4 +1,12 @@
 services:
+  proxy:
+    image: ubuntu/squid
+    volumes:
+      - ./proxy/squid.conf:/etc/squid/squid.conf:ro
+    networks:
+      - devnet
+    restart: unless-stopped
+
   dev:
     build: .
     user: ${HOST_UID:-1000}:${HOST_GID:-1000}
@@ -12,22 +20,32 @@ services:
     volumes:
       - .:/app
       - ${HOST_HOME:-.}/.claude:/home/dev/.claude
-      - ${HOST_HOME:-.}/.claude.json:/home/dev/.claude.json
+      - ${HOST_HOME:-.}/.claude.json:/host-config/.claude.json:ro
       - ${HOST_HOME:-.}/.codex:/home/dev/.codex
       - ${HOST_HOME:-.}/.codex.json:/home/dev/.codex.json
       - ${HOST_HOME:-.}/.config/git:/home/dev/.config/git:ro
-    network_mode: host
+    ports:
+      - "50234:50234"
+    networks:
+      - devnet
     environment:
       - SENSIBO_API_KEY
       - PURPLEAIR_HOSTS
       - ANTHROPIC_API_KEY
       - OPENAI_API_KEY
       - HOME=/home/dev
-      - CLAUDE_CONFIG_DIR=/home/dev/.claude
       - CODEX_HOME=/home/dev/.codex
       - TMPDIR=/tmp
       - XDG_CACHE_HOME=/tmp/.cache
       - npm_config_cache=/tmp/.npm
+      - PLAYWRIGHT_BROWSERS_PATH=/opt/playwright
+      - HTTP_PROXY=http://proxy:3128
+      - HTTPS_PROXY=http://proxy:3128
+      - NO_PROXY=localhost,127.0.0.0/8,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16
     stdin_open: true
     tty: true
     command: sleep infinity
+
+networks:
+  devnet:
+    driver: bridge
