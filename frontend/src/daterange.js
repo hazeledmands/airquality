@@ -73,13 +73,14 @@ export function setupDateRange({ getDataFn, onFilter }) {
         return true;
     }
 
-    // Restore state from URL on load
+    const DEFAULT_PRESET_MS = 259200000; // 3 days
+
+    // Restore state from URL on load, or apply default preset
     function restoreFromURL() {
         const saved = readURL();
         if (saved.preset) {
             const ms = parseInt(saved.preset);
             if (ms > 0) {
-                // Preset will be applied after first data fetch via applyPresetAfterLoad
                 activePresetMs = ms;
                 presetBtns.forEach(b => {
                     b.classList.toggle('active', parseInt(b.dataset.ms) === ms);
@@ -87,8 +88,16 @@ export function setupDateRange({ getDataFn, onFilter }) {
                 return;
             }
         }
-        if (saved.from) fromEl.value = saved.from;
-        if (saved.to) toEl.value = saved.to;
+        if (saved.from || saved.to) {
+            if (saved.from) fromEl.value = saved.from;
+            if (saved.to) toEl.value = saved.to;
+            return;
+        }
+        // No URL state — default to 3d preset
+        activePresetMs = DEFAULT_PRESET_MS;
+        presetBtns.forEach(b => {
+            b.classList.toggle('active', parseInt(b.dataset.ms) === DEFAULT_PRESET_MS);
+        });
     }
 
     // Called after data loads — applies a pending preset if one was in the URL
