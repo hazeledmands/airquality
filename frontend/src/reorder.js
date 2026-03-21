@@ -173,9 +173,15 @@ export function setupReorder(container, {
     /** Attach drag behavior to current items. Call again after DOM rebuild. */
     function bindItems() {
         for (const item of getItems()) {
-            item.setAttribute('draggable', 'true');
+            // Track where mousedown occurred so dragstart can check
+            // (e.target in dragstart is the draggable element, not the clicked child)
+            let startedFromHandle = false;
+            item.addEventListener('mousedown', (e) => {
+                startedFromHandle = !!e.target.closest('.drag-handle');
+                item.setAttribute('draggable', startedFromHandle ? 'true' : 'false');
+            });
             item.addEventListener('dragstart', (e) => {
-                if (!e.target.closest('.drag-handle')) {
+                if (!startedFromHandle) {
                     e.preventDefault();
                     return;
                 }
