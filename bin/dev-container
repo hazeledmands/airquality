@@ -5,6 +5,9 @@ export HOST_UID="${HOST_UID:-$(id -u)}"
 export HOST_GID="${HOST_GID:-$(id -g)}"
 export HOST_HOME="${HOST_HOME:-$HOME}"
 
+ENV_FILE=("--env-file" ".docker-env")
+[ -f .docker-env ] || ENV_FILE=()
+
 # Container starts as root (for iptables setup), so exec commands
 # need an explicit user to avoid running as root.
 if [ "${1:-}" = "exec" ]; then
@@ -15,10 +18,10 @@ if [ "${1:-}" = "exec" ]; then
         case "$arg" in -u|--user) has_user=true; break;; esac
     done
     if [ "$has_user" = false ]; then
-        exec docker compose exec --user "${HOST_UID}:${HOST_GID}" "$@"
+        exec docker compose "${ENV_FILE[@]}" exec --user "${HOST_UID}:${HOST_GID}" "$@"
     else
-        exec docker compose exec "$@"
+        exec docker compose "${ENV_FILE[@]}" exec "$@"
     fi
 fi
 
-exec docker compose "$@"
+exec docker compose "${ENV_FILE[@]}" "$@"
