@@ -43,6 +43,26 @@
             text-transform: uppercase;
             letter-spacing: 0.05em;
             margin-bottom: 0.75rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        .drag-handle {
+            cursor: grab;
+            color: #555;
+            font-size: 0.9rem;
+            line-height: 1;
+            user-select: none;
+            touch-action: none;
+            flex-shrink: 0;
+        }
+        .drag-handle:hover { color: #999; }
+        .drag-handle:active { cursor: grabbing; }
+        .chart-card.dragging {
+            opacity: 0.35;
+        }
+        .chart-card[draggable="true"] {
+            transition: opacity 0.15s ease;
         }
         .latest-values {
             display: grid;
@@ -161,24 +181,24 @@
     </div>
     <div class="latest-values" id="latest"></div>
     <div class="charts">
-        <div class="chart-card">
-            <h2>Temperature (&deg;F)</h2>
+        <div class="chart-card" data-chart-id="temp">
+            <h2><span class="drag-handle" title="Drag to reorder">&#x2630;</span>Temperature (&deg;F)</h2>
             <canvas id="tempChart"></canvas>
         </div>
-        <div class="chart-card">
-            <h2>Dew Point (&deg;F)</h2>
+        <div class="chart-card" data-chart-id="dewpoint">
+            <h2><span class="drag-handle" title="Drag to reorder">&#x2630;</span>Dew Point (&deg;F)</h2>
             <canvas id="dewpointChart"></canvas>
         </div>
-        <div class="chart-card">
-            <h2>Humidity (%)</h2>
+        <div class="chart-card" data-chart-id="humidity">
+            <h2><span class="drag-handle" title="Drag to reorder">&#x2630;</span>Humidity (%)</h2>
             <canvas id="humidityChart"></canvas>
         </div>
-        <div class="chart-card">
-            <h2>PM2.5 (&micro;g/m&sup3;)</h2>
+        <div class="chart-card" data-chart-id="pm">
+            <h2><span class="drag-handle" title="Drag to reorder">&#x2630;</span>PM2.5 (&micro;g/m&sup3;)</h2>
             <canvas id="pmChart"></canvas>
         </div>
-        <div class="chart-card wide">
-            <h2>AC State</h2>
+        <div class="chart-card" data-chart-id="acState">
+            <h2><span class="drag-handle" title="Drag to reorder">&#x2630;</span>AC State</h2>
             <canvas id="acStateChart"></canvas>
         </div>
     </div>

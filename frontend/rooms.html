@@ -78,7 +78,23 @@
             margin-bottom: 0.75rem;
             padding-bottom: 0.5rem;
             border-bottom: 1px solid #ffffff10;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
         }
+        .drag-handle {
+            cursor: grab;
+            color: #555;
+            font-size: 0.9rem;
+            line-height: 1;
+            user-select: none;
+            touch-action: none;
+            flex-shrink: 0;
+        }
+        .drag-handle:hover { color: #999; }
+        .drag-handle:active { cursor: grabbing; }
+        .room-section.dragging { opacity: 0.35; }
+        .room-section[draggable="true"] { transition: opacity 0.15s ease; }
         .chart-card {
             background: #16172a;
             border: 1px solid #ffffff08;

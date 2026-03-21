@@ -2,6 +2,7 @@ import { COLORS, REFRESH_MS, cToF, filterByRange, buildDatasets, computeStatus, 
 import { chartOpts } from './charts.js';
 import { crosshairPlugin, registerChart } from './crosshair.js';
 import { setupDateRange } from './daterange.js';
+import { setupReorder } from './reorder.js';
 
 Chart.register(crosshairPlugin);
 
@@ -109,5 +110,6 @@ async function fetchData() {
 }
 
 initCharts();
+setupReorder(document.querySelector('.charts'));
 fetchData();
 setInterval(fetchData, REFRESH_MS);

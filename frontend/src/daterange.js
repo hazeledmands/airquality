@@ -1,8 +1,11 @@
 import { toLocalInput, getDataRange } from './data.js';
 
+const DATE_PARAMS = new Set(['from', 'to', 'preset']);
+
 function updateURL(params) {
     const url = new URL(window.location);
-    url.search = '';
+    // Remove only date-range params, preserve everything else (e.g. order, roomOrder)
+    for (const key of DATE_PARAMS) url.searchParams.delete(key);
     for (const [k, v] of Object.entries(params)) {
         if (v) url.searchParams.set(k, v);
     }

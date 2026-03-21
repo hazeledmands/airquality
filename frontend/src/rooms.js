@@ -2,6 +2,8 @@ import { REFRESH_MS, cToF, filterByRange, buildRoomDatasets, computeStatus, getA
 import { xTickCallback } from './charts.js';
 import { crosshairPlugin, registerChart, unregisterChart } from './crosshair.js';
 import { setupDateRange } from './daterange.js';
+import { createDragHandle } from './chart-card.js';
+import { setupReorder } from './reorder.js';
 
 Chart.register(crosshairPlugin);
 
@@ -15,6 +17,7 @@ const METRIC_COLORS = {
 
 let allData = null;
 let roomCharts = []; // { room, chart }
+let reorder = null;
 
 function combinedChartOpts(ar, room) {
     const hasPM = room.pm.length > 0;
@@ -159,10 +162,12 @@ function buildRoomDOM(rooms) {
     for (const room of rooms) {
         const section = document.createElement('div');
         section.className = 'room-section';
+        section.dataset.chartId = room.name;
 
         const heading = document.createElement('h2');
         heading.style.color = room.color;
-        heading.textContent = room.name;
+        heading.appendChild(createDragHandle());
+        heading.appendChild(document.createTextNode(room.name));
         section.appendChild(heading);
 
         const latest = document.createElement('div');
@@ -186,6 +191,8 @@ function buildRoomDOM(rooms) {
         container.appendChild(section);
         roomCharts.push({ room: room.name, chart });
     }
+
+    if (reorder) reorder.bindItems();
 }
 
 function updateLatestValues(rooms) {
@@ -276,6 +283,11 @@ async function fetchData() {
         document.getElementById('status').textContent = 'Error: ' + err.message;
     }
 }
+
+reorder = setupReorder(document.getElementById('rooms-container'), {
+    itemSelector: '.room-section',
+    urlParam: 'roomOrder',
+});
 
 fetchData();
 setInterval(fetchData, REFRESH_MS);
