@@ -65,7 +65,7 @@ CSV columns: timestamp, device_id, room, on, mode, target_temp, temp_unit, fan_l
 
 ## Dashboard
 
-In continuous mode, a web dashboard is served at `http://localhost:50233/` showing live charts of temperature, humidity, dew point, PM2.5, and AC on/off state from the CSV logs. The page auto-refreshes every 60 seconds, includes a date-range filter, and the AC state chart is rendered as a stepped on/off timeline per room. A "By Room" view at `/rooms` groups all metrics per room instead of per metric type. A JSON API is available at `/api/data`.
+In continuous mode, a web dashboard is served at `http://localhost:50233/` showing live charts. The default view groups all metrics (temperature, humidity, dew point, PM2.5, AC state) per room. A "By Metric" view at `/by-metric` shows one chart per metric type. Both views auto-refresh every 60 seconds. The date-range picker includes quick presets (1h, 8h, 1d, 3d, 1w) and prev/next buttons to pan through time. Hovering over any chart shows a synced vertical crosshair line across all charts at the same timestamp. A JSON API is available at `/api/data`.
 
 Port `50233` is the production default. When testing locally, use a different port such as `--port 50234`.
 

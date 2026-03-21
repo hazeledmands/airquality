@@ -111,8 +111,8 @@ func main() {
 		mux := http.NewServeMux()
 		mux.Handle("/metrics", m.Handler())
 		mux.HandleFunc("/api/data", dataHandler(cfg.output, cfg.acOutput))
-		mux.HandleFunc("/rooms", roomsHandler())
-		mux.HandleFunc("/", dashboardHandler())
+		mux.HandleFunc("/by-metric", dashboardHandler())
+		mux.HandleFunc("/", roomsHandler())
 		log.Printf("Dashboard at http://0.0.0.0:%d/ (accessible from any machine on the network)", cfg.port)
 		log.Printf("Prometheus metrics at http://0.0.0.0:%d/metrics", cfg.port)
 		if err := http.ListenAndServe(addr, mux); err != nil {

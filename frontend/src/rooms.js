@@ -1,4 +1,8 @@
-import { REFRESH_MS, cToF, filterByRange, toLocalInput, buildRoomDatasets, computeStatus, getDataRange, getAspectRatio } from './data.js';
+import { REFRESH_MS, cToF, filterByRange, buildRoomDatasets, computeStatus, getAspectRatio } from './data.js';
+import { crosshairPlugin, registerChart, unregisterChart } from './crosshair.js';
+import { setupDateRange } from './daterange.js';
+
+Chart.register(crosshairPlugin);
 
 const METRIC_COLORS = {
     temp:     '#fb923c', // orange
@@ -142,7 +146,13 @@ function buildCombinedDatasets(room) {
 function buildRoomDOM(rooms) {
     const container = document.getElementById('rooms-container');
     container.innerHTML = '';
+
+    // Unregister old charts
+    for (const rc of roomCharts) {
+        unregisterChart(rc.chart);
+    }
     roomCharts = [];
+
     const ar = getAspectRatio(window.innerWidth);
 
     for (const room of rooms) {
@@ -171,6 +181,7 @@ function buildRoomDOM(rooms) {
             options: combinedChartOpts(ar, room),
         });
 
+        registerChart(chart);
         container.appendChild(section);
         roomCharts.push({ room: room.name, chart });
     }
@@ -209,6 +220,7 @@ function updateCharts(data) {
         document.getElementById('status').textContent = 'No data yet.';
         const container = document.getElementById('rooms-container');
         container.innerHTML = '<div class="no-data">Waiting for first sensor reading&hellip;</div>';
+        for (const rc of roomCharts) unregisterChart(rc.chart);
         roomCharts = [];
         return;
     }
@@ -244,24 +256,12 @@ window.addEventListener('resize', () => {
     }
 });
 
-function applyFilter() {
-    if (allData) {
-        const from = document.getElementById('rangeFrom').value;
-        const to = document.getElementById('rangeTo').value;
-        updateCharts(filterByRange(allData, from, to));
-    }
-}
-
-function setRangeDefaults(data) {
-    const fromEl = document.getElementById('rangeFrom');
-    const toEl = document.getElementById('rangeTo');
-    if (fromEl.value || toEl.value) return;
-    const range = getDataRange(data);
-    if (range) {
-        fromEl.value = toLocalInput(range.min);
-        toEl.value = toLocalInput(range.max);
-    }
-}
+const { applyFilter, setRangeDefaults } = setupDateRange({
+    getDataFn: () => allData,
+    onFilter: (from, to) => {
+        if (allData) updateCharts(filterByRange(allData, from, to));
+    },
+});
 
 async function fetchData() {
     try {
@@ -275,17 +275,6 @@ async function fetchData() {
         document.getElementById('status').textContent = 'Error: ' + err.message;
     }
 }
-
-document.getElementById('rangeFrom').addEventListener('change', applyFilter);
-document.getElementById('rangeTo').addEventListener('change', applyFilter);
-document.getElementById('rangeReset').addEventListener('click', () => {
-    document.getElementById('rangeFrom').value = '';
-    document.getElementById('rangeTo').value = '';
-    if (allData) {
-        setRangeDefaults(allData);
-        applyFilter();
-    }
-});
 
 fetchData();
 setInterval(fetchData, REFRESH_MS);

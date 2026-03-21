@@ -108,6 +108,7 @@
             font-family: inherit;
         }
         .date-range button:hover { background: #ffffff18; color: #ccc; }
+        .date-range button.active { background: #38bdf820; border-color: #38bdf8; color: #38bdf8; }
         .no-data {
             color: #444;
             text-align: center;
@@ -142,8 +143,15 @@
         <h1>Air Quality</h1>
         <span class="status" id="status">Loading&hellip;</span>
     </div>
-    <nav><a href="/rooms" style="color:#38bdf8;font-size:0.8rem;text-decoration:none">View by room &rarr;</a></nav>
+    <nav><a href="/" style="color:#38bdf8;font-size:0.8rem;text-decoration:none">&larr; View by room</a></nav>
     <div class="date-range">
+        <button id="rangePrev" title="Previous">&#9664;</button>
+        <button class="preset-btn" data-ms="3600000">1h</button>
+        <button class="preset-btn" data-ms="28800000">8h</button>
+        <button class="preset-btn" data-ms="86400000">1d</button>
+        <button class="preset-btn" data-ms="259200000">3d</button>
+        <button class="preset-btn" data-ms="604800000">1w</button>
+        <button id="rangeNext" title="Next">&#9654;</button>
         <label for="rangeFrom">From</label>
         <input type="datetime-local" id="rangeFrom">
         <span class="sep">&ndash;</span>

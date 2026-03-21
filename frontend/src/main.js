@@ -1,5 +1,9 @@
-import { COLORS, REFRESH_MS, cToF, filterByRange, toLocalInput, buildDatasets, computeStatus, getDataRange, getAspectRatio } from './data.js';
+import { COLORS, REFRESH_MS, cToF, filterByRange, buildDatasets, computeStatus, getAspectRatio } from './data.js';
 import { chartOpts } from './charts.js';
+import { crosshairPlugin, registerChart } from './crosshair.js';
+import { setupDateRange } from './daterange.js';
+
+Chart.register(crosshairPlugin);
 
 const charts = {};
 let allData = null;
@@ -16,6 +20,10 @@ function initCharts() {
     acStateOpts.scales.y.ticks.stepSize = 1;
     acStateOpts.scales.y.ticks.callback = (value) => value === 1 ? 'On' : value === 0 ? 'Off' : '';
     charts.acState = new Chart(document.getElementById('acStateChart'), { type: 'line', data: { datasets: [] }, options: acStateOpts });
+
+    for (const chart of Object.values(charts)) {
+        registerChart(chart);
+    }
 }
 
 window.addEventListener('resize', () => {
@@ -80,25 +88,12 @@ function updateCharts(data) {
         computeStatus(sensors, acStates) + ` · updated ${new Date().toLocaleTimeString()}`;
 }
 
-function applyFilter() {
-    if (allData) {
-        const from = document.getElementById('rangeFrom').value;
-        const to = document.getElementById('rangeTo').value;
-        updateCharts(filterByRange(allData, from, to));
-    }
-}
-
-function setRangeDefaults(data) {
-    const fromEl = document.getElementById('rangeFrom');
-    const toEl = document.getElementById('rangeTo');
-    if (fromEl.value || toEl.value) return;
-
-    const range = getDataRange(data);
-    if (range) {
-        fromEl.value = toLocalInput(range.min);
-        toEl.value = toLocalInput(range.max);
-    }
-}
+const { applyFilter, setRangeDefaults } = setupDateRange({
+    getDataFn: () => allData,
+    onFilter: (from, to) => {
+        if (allData) updateCharts(filterByRange(allData, from, to));
+    },
+});
 
 async function fetchData() {
     try {
@@ -112,17 +107,6 @@ async function fetchData() {
         document.getElementById('status').textContent = 'Error: ' + err.message;
     }
 }
-
-document.getElementById('rangeFrom').addEventListener('change', applyFilter);
-document.getElementById('rangeTo').addEventListener('change', applyFilter);
-document.getElementById('rangeReset').addEventListener('click', () => {
-    document.getElementById('rangeFrom').value = '';
-    document.getElementById('rangeTo').value = '';
-    if (allData) {
-        setRangeDefaults(allData);
-        applyFilter();
-    }
-});
 
 initCharts();
 fetchData();
