@@ -1,3 +1,16 @@
+export function xTickCallback(value, index, ticks) {
+    const dt = luxon.DateTime.fromMillis(ticks[index].value);
+    const time = dt.toFormat('h:mm a');
+    if (index === 0) {
+        return [dt.toFormat('ccc M/d'), time];
+    }
+    const prev = luxon.DateTime.fromMillis(ticks[index - 1].value);
+    if (dt.day !== prev.day || dt.month !== prev.month) {
+        return [dt.toFormat('ccc M/d'), time];
+    }
+    return time;
+}
+
 export function chartOpts(aspectRatio) {
     return {
         responsive: true,
@@ -9,7 +22,7 @@ export function chartOpts(aspectRatio) {
             x: {
                 type: 'time',
                 time: { tooltipFormat: 'ff' },
-                ticks: { color: '#555', autoSkip: true, maxTicksLimit: 8, maxRotation: 0 },
+                ticks: { color: '#555', autoSkip: true, maxTicksLimit: 8, maxRotation: 0, callback: xTickCallback },
                 grid: { color: '#ffffff06' },
             },
             y: {

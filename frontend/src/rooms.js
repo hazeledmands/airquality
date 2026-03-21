@@ -1,4 +1,5 @@
 import { REFRESH_MS, cToF, filterByRange, buildRoomDatasets, computeStatus, getAspectRatio } from './data.js';
+import { xTickCallback } from './charts.js';
 import { crosshairPlugin, registerChart, unregisterChart } from './crosshair.js';
 import { setupDateRange } from './daterange.js';
 
@@ -29,7 +30,7 @@ function combinedChartOpts(ar, room) {
             x: {
                 type: 'time',
                 time: { tooltipFormat: 'ff' },
-                ticks: { color: '#555', autoSkip: true, maxTicksLimit: 8, maxRotation: 0 },
+                ticks: { color: '#555', autoSkip: true, maxTicksLimit: 8, maxRotation: 0, callback: xTickCallback },
                 grid: { color: '#ffffff06' },
             },
             y: {
