@@ -18,7 +18,7 @@ services:
       - ${HOST_HOME:-.}/.codex.json:/home/dev/.codex.json
       - ${HOST_HOME:-.}/.config/git:/home/dev/.config/git:ro
     ports:
-      - "50234:50234"
+      - "${DEV_PORT:-50234}:${DEV_PORT:-50234}"
     networks:
       - devnet
     environment:

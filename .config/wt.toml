@@ -1,0 +1,13 @@
+# Assign a unique dev container port and start the container
+[post-create]
+env = """
+if [ -f .env ]; then
+    grep -v '^DEV_PORT=' .env > .env.tmp && mv .env.tmp .env
+fi
+echo 'DEV_PORT={{ branch | hash_port }}' >> .env
+"""
+container = "bin/dev-container up -d"
+
+# Stop the container when the worktree is removed
+[post-remove]
+container = "bin/dev-container down 2>/dev/null || true"
