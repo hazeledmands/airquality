@@ -4,7 +4,8 @@ export function xTickCallback(value, index, ticks) {
     const first = luxon.DateTime.fromMillis(ticks[0].value);
     const last = luxon.DateTime.fromMillis(ticks[ticks.length - 1].value);
     if (first.hasSame(last, 'day')) return time;
-    return [dt.toFormat('ccc M/d'), time];
+    if (index === 0 || ticks[index].major) return [dt.toFormat('ccc M/d'), time];
+    return time;
 }
 
 export function chartOpts(aspectRatio) {
@@ -18,7 +19,7 @@ export function chartOpts(aspectRatio) {
             x: {
                 type: 'time',
                 time: { tooltipFormat: 'ff' },
-                ticks: { color: '#555', autoSkip: true, maxTicksLimit: 8, maxRotation: 0, callback: xTickCallback },
+                ticks: { color: '#555', autoSkip: true, maxTicksLimit: 8, maxRotation: 0, callback: xTickCallback, major: { enabled: true } },
                 grid: { color: '#ffffff06' },
             },
             y: {
