@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"log"
@@ -15,6 +16,7 @@ import (
 	"github.com/hazel/airquality/metrics"
 	"github.com/hazel/airquality/purpleair"
 	"github.com/hazel/airquality/sensibo"
+	"github.com/hazel/airquality/store"
 )
 
 type config struct {
@@ -101,8 +103,20 @@ func main() {
 
 	m := metrics.New()
 
+	var db *store.Store
+	if dbURL := os.Getenv("DATABASE_URL"); dbURL != "" {
+		var err error
+		db, err = store.New(context.Background(), dbURL)
+		if err != nil {
+			log.Printf("Warning: could not connect to database: %v", err)
+		} else {
+			defer db.Close()
+			log.Printf("Connected to database")
+		}
+	}
+
 	if cfg.once {
-		captureAll(csvLog, acLog, acExistingIDs, m, sensiboKey, purpleairHosts, cfg.verbose)
+		captureAll(csvLog, acLog, acExistingIDs, m, db, sensiboKey, purpleairHosts, cfg.verbose)
 		return
 	}
 
@@ -121,7 +135,7 @@ func main() {
 	}()
 
 	log.Printf("Logging to %s every %s (Ctrl+C to stop)", cfg.output, cfg.interval)
-	captureAll(csvLog, acLog, acExistingIDs, m, sensiboKey, purpleairHosts, cfg.verbose)
+	captureAll(csvLog, acLog, acExistingIDs, m, db, sensiboKey, purpleairHosts, cfg.verbose)
 
 	ticker := time.NewTicker(cfg.interval)
 	defer ticker.Stop()
@@ -132,7 +146,7 @@ func main() {
 	for {
 		select {
 		case <-ticker.C:
-			captureAll(csvLog, acLog, acExistingIDs, m, sensiboKey, purpleairHosts, cfg.verbose)
+			captureAll(csvLog, acLog, acExistingIDs, m, db, sensiboKey, purpleairHosts, cfg.verbose)
 		case <-sig:
 			log.Println("Stopping.")
 			return
@@ -140,19 +154,19 @@ func main() {
 	}
 }
 
-func captureAll(csvLog *logger.CSVLogger, acLog *logger.ACStateCSVLogger, acExistingIDs map[string]bool, m *metrics.Metrics, sensiboKey string, purpleairHosts []string, verbose bool) {
+func captureAll(csvLog *logger.CSVLogger, acLog *logger.ACStateCSVLogger, acExistingIDs map[string]bool, m *metrics.Metrics, db *store.Store, sensiboKey string, purpleairHosts []string, verbose bool) {
 	now := time.Now()
 
 	if sensiboKey != "" {
-		captureSensibo(csvLog, m, sensiboKey, now, verbose)
-		captureACStates(acLog, acExistingIDs, sensiboKey, verbose)
+		captureSensibo(csvLog, m, db, sensiboKey, now, verbose)
+		captureACStates(acLog, acExistingIDs, db, sensiboKey, verbose)
 	}
 	if len(purpleairHosts) > 0 {
-		capturePurpleAir(csvLog, m, purpleairHosts, now, verbose)
+		capturePurpleAir(csvLog, m, db, purpleairHosts, now, verbose)
 	}
 }
 
-func captureSensibo(csvLog *logger.CSVLogger, m *metrics.Metrics, apiKey string, now time.Time, verbose bool) {
+func captureSensibo(csvLog *logger.CSVLogger, m *metrics.Metrics, db *store.Store, apiKey string, now time.Time, verbose bool) {
 	client := sensibo.NewClient(apiKey)
 	devices, err := client.GetDevices()
 	if err != nil {
@@ -184,6 +198,11 @@ func captureSensibo(csvLog *logger.CSVLogger, m *metrics.Metrics, apiKey string,
 		if err := csvLog.Log(rec); err != nil {
 			log.Printf("Log write error: %v", err)
 		}
+		if db != nil {
+			if err := db.InsertReading(context.Background(), rec); err != nil {
+				log.Printf("DB write error: %v", err)
+			}
+		}
 		m.Update(rec)
 		if verbose {
 			printVerboseRecord(rec)
@@ -193,7 +212,7 @@ func captureSensibo(csvLog *logger.CSVLogger, m *metrics.Metrics, apiKey string,
 	}
 }
 
-func capturePurpleAir(csvLog *logger.CSVLogger, m *metrics.Metrics, hosts []string, now time.Time, verbose bool) {
+func capturePurpleAir(csvLog *logger.CSVLogger, m *metrics.Metrics, db *store.Store, hosts []string, now time.Time, verbose bool) {
 	client := purpleair.NewClient(hosts)
 	for _, host := range hosts {
 		reading, err := client.Fetch(host)
@@ -220,6 +239,11 @@ func capturePurpleAir(csvLog *logger.CSVLogger, m *metrics.Metrics, hosts []stri
 		if err := csvLog.Log(rec); err != nil {
 			log.Printf("Log write error: %v", err)
 		}
+		if db != nil {
+			if err := db.InsertReading(context.Background(), rec); err != nil {
+				log.Printf("DB write error: %v", err)
+			}
+		}
 		m.Update(rec)
 		if verbose {
 			printVerboseRecord(rec)
@@ -229,7 +253,7 @@ func capturePurpleAir(csvLog *logger.CSVLogger, m *metrics.Metrics, hosts []stri
 	}
 }
 
-func captureACStates(acLog *logger.ACStateCSVLogger, existingIDs map[string]bool, apiKey string, verbose bool) {
+func captureACStates(acLog *logger.ACStateCSVLogger, existingIDs map[string]bool, db *store.Store, apiKey string, verbose bool) {
 	client := sensibo.NewClient(apiKey)
 	devices, err := client.GetDevices()
 	if err != nil {
@@ -265,6 +289,11 @@ func captureACStates(acLog *logger.ACStateCSVLogger, existingIDs map[string]bool
 			if err := acLog.Log(rec); err != nil {
 				log.Printf("AC state log write error: %v", err)
 				continue
+			}
+			if db != nil {
+				if err := db.InsertACState(context.Background(), rec); err != nil {
+					log.Printf("DB AC state write error: %v", err)
+				}
 			}
 			existingIDs[sc.ID] = true
 			newCount++
