@@ -12,4 +12,4 @@ container = "bin/dev-container up -d"
 
 # Stop the container when the worktree is removed
 [post-remove]
-container = "bin/dev-container down 2>/dev/null || true"
+container = "COMPOSE_PROJECT_NAME=airquality-{{ branch | sanitize }} docker compose down 2>/dev/null || true"
