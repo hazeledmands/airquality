@@ -14,6 +14,7 @@ import (
 	"github.com/hazel/airquality/calc"
 	"github.com/hazel/airquality/logger"
 	"github.com/hazel/airquality/metrics"
+	"github.com/hazel/airquality/openmeteo"
 	"github.com/hazel/airquality/purpleair"
 	"github.com/hazel/airquality/sensibo"
 	"github.com/hazel/airquality/store"
@@ -75,6 +76,7 @@ func main() {
 
 	sensiboKey := os.Getenv("SENSIBO_API_KEY")
 	purpleairHosts := parsePurpleAirHosts(os.Getenv("PURPLEAIR_HOSTS"))
+	weatherClient := parseWeatherClient(os.Getenv("WEATHER_LAT"), os.Getenv("WEATHER_LON"))
 
 	if sensiboKey == "" && len(purpleairHosts) == 0 {
 		log.Fatal("No sensors configured. Set SENSIBO_API_KEY and/or PURPLEAIR_HOSTS.")
@@ -116,7 +118,7 @@ func main() {
 	}
 
 	if cfg.once {
-		captureAll(csvLog, acLog, acExistingIDs, m, db, sensiboKey, purpleairHosts, cfg.verbose)
+		captureAll(csvLog, acLog, acExistingIDs, m, db, sensiboKey, purpleairHosts, weatherClient, cfg.verbose)
 		return
 	}
 
@@ -135,7 +137,7 @@ func main() {
 	}()
 
 	log.Printf("Logging to %s every %s (Ctrl+C to stop)", cfg.output, cfg.interval)
-	captureAll(csvLog, acLog, acExistingIDs, m, db, sensiboKey, purpleairHosts, cfg.verbose)
+	captureAll(csvLog, acLog, acExistingIDs, m, db, sensiboKey, purpleairHosts, weatherClient, cfg.verbose)
 
 	ticker := time.NewTicker(cfg.interval)
 	defer ticker.Stop()
@@ -146,7 +148,7 @@ func main() {
 	for {
 		select {
 		case <-ticker.C:
-			captureAll(csvLog, acLog, acExistingIDs, m, db, sensiboKey, purpleairHosts, cfg.verbose)
+			captureAll(csvLog, acLog, acExistingIDs, m, db, sensiboKey, purpleairHosts, weatherClient, cfg.verbose)
 		case <-sig:
 			log.Println("Stopping.")
 			return
@@ -154,7 +156,7 @@ func main() {
 	}
 }
 
-func captureAll(csvLog *logger.CSVLogger, acLog *logger.ACStateCSVLogger, acExistingIDs map[string]bool, m *metrics.Metrics, db *store.Store, sensiboKey string, purpleairHosts []string, verbose bool) {
+func captureAll(csvLog *logger.CSVLogger, acLog *logger.ACStateCSVLogger, acExistingIDs map[string]bool, m *metrics.Metrics, db *store.Store, sensiboKey string, purpleairHosts []string, weatherClient *openmeteo.Client, verbose bool) {
 	now := time.Now()
 
 	if sensiboKey != "" {
@@ -163,6 +165,9 @@ func captureAll(csvLog *logger.CSVLogger, acLog *logger.ACStateCSVLogger, acExis
 	}
 	if len(purpleairHosts) > 0 {
 		capturePurpleAir(csvLog, m, db, purpleairHosts, now, verbose)
+	}
+	if weatherClient != nil {
+		captureWeather(db, weatherClient, verbose)
 	}
 }
 
@@ -329,6 +334,43 @@ func printVerboseRecord(rec logger.Record) {
 		fmt.Printf("    PM10:        %.1f µg/m³\n", rec.PM10)
 		fmt.Printf("    AQI:         %.0f\n", rec.AQI)
 	}
+}
+
+func captureWeather(db *store.Store, client *openmeteo.Client, verbose bool) {
+	reading, err := client.Fetch()
+	if err != nil {
+		log.Printf("Weather error: %v", err)
+		return
+	}
+	if db != nil {
+		if err := db.InsertWeather(context.Background(), reading); err != nil {
+			log.Printf("DB weather write error: %v", err)
+		}
+	}
+	if verbose {
+		log.Printf("  weather (%.4f,%.4f): %.1f°C, %.0f%%, dew point %.1f°C, pressure %.1f hPa, wind %.1f km/h, UV %.1f, precip %.1f mm",
+			reading.Latitude, reading.Longitude,
+			reading.TempC, reading.Humidity, reading.DewPointC,
+			reading.PressureHPa, reading.WindSpeedKMH, reading.UVIndex, reading.PrecipitationMM)
+	} else {
+		log.Printf("  weather: %.1f°C, %.0f%% humidity, %.1f hPa", reading.TempC, reading.Humidity, reading.PressureHPa)
+	}
+}
+
+func parseWeatherClient(latStr, lonStr string) *openmeteo.Client {
+	if latStr == "" || lonStr == "" {
+		return nil
+	}
+	var lat, lon float64
+	if _, err := fmt.Sscanf(latStr, "%f", &lat); err != nil {
+		log.Printf("Invalid WEATHER_LAT %q: %v", latStr, err)
+		return nil
+	}
+	if _, err := fmt.Sscanf(lonStr, "%f", &lon); err != nil {
+		log.Printf("Invalid WEATHER_LON %q: %v", lonStr, err)
+		return nil
+	}
+	return openmeteo.NewClient(lat, lon)
 }
 
 func parsePurpleAirHosts(hostsStr string) []string {
