@@ -172,6 +172,13 @@ export function setupReorder(container, {
 
     /** Attach drag behavior to current items. Call again after DOM rebuild. */
     function bindItems() {
+        // Re-apply saved URL order (items may have been rebuilt in default order)
+        const saved = new URLSearchParams(window.location.search).get(urlParam);
+        if (saved) {
+            const validIds = defaultOrder || getCurrentOrder();
+            applyOrder(container, parseOrder(saved, validIds));
+        }
+
         for (const item of getItems()) {
             // Track where mousedown occurred so dragstart can check
             // (e.target in dragstart is the draggable element, not the clicked child)

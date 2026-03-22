@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { DEFAULT_ORDER, parseOrder, serializeOrder } from '../reorder.js';
+import { DEFAULT_ORDER, parseOrder, serializeOrder, applyOrder } from '../reorder.js';
 
 describe('DEFAULT_ORDER', () => {
     it('contains all five chart ids', () => {
@@ -66,5 +66,39 @@ describe('serializeOrder', () => {
     it('returns string when order differs from custom default', () => {
         const custom = ['a', 'b', 'c'];
         expect(serializeOrder(['c', 'a', 'b'], custom)).toBe('c,a,b');
+    });
+});
+
+describe('applyOrder', () => {
+    function makeContainer(ids) {
+        const container = { children: [], _els: {} };
+        for (const id of ids) {
+            const el = { dataset: { chartId: id }, _id: id };
+            container._els[id] = el;
+        }
+        container.querySelector = (sel) => {
+            const match = sel.match(/\[data-chart-id="(.+?)"\]/);
+            return match ? container._els[match[1]] : null;
+        };
+        const order = [...ids];
+        container.appendChild = (el) => {
+            const idx = order.indexOf(el._id);
+            if (idx !== -1) order.splice(idx, 1);
+            order.push(el._id);
+        };
+        container._getOrder = () => [...order];
+        return container;
+    }
+
+    it('reorders children to match the given order', () => {
+        const c = makeContainer(['a', 'b', 'c']);
+        applyOrder(c, ['c', 'a', 'b']);
+        expect(c._getOrder()).toEqual(['c', 'a', 'b']);
+    });
+
+    it('skips ids not present in the container', () => {
+        const c = makeContainer(['a', 'b']);
+        applyOrder(c, ['x', 'b', 'a']);
+        expect(c._getOrder()).toEqual(['b', 'a']);
     });
 });
