@@ -12,6 +12,13 @@ frontend/dist/
 # Playwright screenshots
 tmp/
 
+# Runtime data files
+airquality.csv
+acstates.csv
+
+# Dev server wrapper (environment-specific)
+run-dev.sh
+
 # Tool config
 .claude/
 .serena/
