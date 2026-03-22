@@ -1,10 +1,11 @@
 # airquality
 
-Collects and logs air quality sensor data from IoT devices to a CSV file.
+Collects and logs air quality sensor data from IoT devices to a CSV file and (optionally) PostgreSQL.
 
 Supports:
 - [Sensibo](https://sensibo.com/) Air/Sky — temperature, humidity, dew point
 - [PurpleAir](https://www.purpleair.com/) (local API) — PM1.0/2.5/10, AQI, temperature, humidity, dew point, pressure, VOC
+- [Open-Meteo](https://open-meteo.com/) — outdoor temperature, humidity, UV index, wind, precipitation, sunrise/sunset (no API key required)
 
 ## Setup
 
@@ -19,6 +20,25 @@ export PURPLEAIR_HOSTS="192.168.1.218,192.168.1.219"
 ```
 
 At least one must be set.
+
+### PostgreSQL (optional)
+
+Set `DATABASE_URL` to a Postgres connection string to mirror all readings to a database. Writes are idempotent — duplicate entries are silently skipped — so multiple instances can run concurrently against the same database.
+
+```sh
+export DATABASE_URL="postgresql://user:pass@host:5432/dbname"
+```
+
+Schema migrations live in `supabase/migrations/`. Apply them with `psql` or the Supabase CLI before first use.
+
+### Outdoor weather (optional)
+
+Set `WEATHER_LAT` and `WEATHER_LON` to fetch outdoor conditions from [Open-Meteo](https://open-meteo.com/) on each capture cycle. Requires `DATABASE_URL` — weather data is stored in the `weather` table and surfaced in the dashboard.
+
+```sh
+export WEATHER_LAT="37.8313"
+export WEATHER_LON="-122.2853"
+```
 
 ## Usage
 
@@ -66,6 +86,11 @@ CSV columns: timestamp, device_id, room, on, mode, target_temp, temp_unit, fan_l
 ## Dashboard
 
 In continuous mode, a web dashboard is served at `http://localhost:50233/` showing live charts. The default view groups all metrics (temperature, humidity, dew point, PM2.5, AC state) per room. A "By Metric" view at `/by-metric` shows one chart per metric type. Both views auto-refresh every 60 seconds. The date-range picker includes quick presets (1h, 8h, 1d, 3d, 1w) and prev/next buttons to pan through time. Hovering over any chart shows a synced vertical crosshair line across all charts at the same timestamp. A JSON API is available at `/api/data`.
+
+When `WEATHER_LAT`/`WEATHER_LON` are configured, the rooms view also shows:
+- **Outdoor weather card** — current conditions strip (temp, humidity, wind, precip) plus a dual-axis chart of outdoor temperature and UV index
+- **Daylight shading** — non-daylight hours are shaded on all charts using the sunrise/sunset times from Open-Meteo
+- **Outdoor temp overlay** — a toggle adds outdoor temperature as a dashed line on each indoor room chart for comparison; state persists in the URL (`?outdoorTemp=1`)
 
 Port `50233` is the production default. When testing locally, use a different port such as `--port 50234`.
 
