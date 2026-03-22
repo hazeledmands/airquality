@@ -126,7 +126,7 @@ func main() {
 		addr := fmt.Sprintf(":%d", cfg.port)
 		mux := http.NewServeMux()
 		mux.Handle("/metrics", m.Handler())
-		mux.HandleFunc("/api/data", dataHandler(cfg.output, cfg.acOutput))
+		mux.HandleFunc("/api/data", dataHandler(cfg.output, cfg.acOutput, db))
 		mux.HandleFunc("/by-metric", dashboardHandler())
 		mux.HandleFunc("/", roomsHandler())
 		log.Printf("Dashboard at http://0.0.0.0:%d/ (accessible from any machine on the network)", cfg.port)

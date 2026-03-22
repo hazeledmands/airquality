@@ -3,7 +3,7 @@ export const REFRESH_MS = 60000;
 export const MOBILE_BREAKPOINT = 600;
 
 export function getAspectRatio(width) {
-    return width <= MOBILE_BREAKPOINT ? 5 : 8;
+    return width <= MOBILE_BREAKPOINT ? 1.2 : 2;
 }
 
 export function cToF(c) {
@@ -56,6 +56,10 @@ export function filterByRange(data, from, to) {
                 return t >= fromMs && t <= toMs;
             }),
         })).filter(state => state.changes.length > 0),
+        weather: (data.weather || []).filter(r => {
+            const t = new Date(r.timestamp).getTime();
+            return t >= fromMs && t <= toMs;
+        }),
     };
 }
 
@@ -136,5 +140,49 @@ export function getDataRange(data) {
             if (t > maxT) maxT = t;
         }
     }
+    for (const r of (data.weather || [])) {
+        const t = new Date(r.timestamp).getTime();
+        if (t < minT) minT = t;
+        if (t > maxT) maxT = t;
+    }
     return minT !== Infinity ? { min: new Date(minT), max: new Date(maxT) } : null;
+}
+
+export function makeWeatherTempSeries(weather, opts = {}) {
+    const data = weather.map(r => ({ x: r.timestamp, y: cToF(r.temp_c) }));
+    return {
+        label: 'Outdoor Temp',
+        data,
+        borderColor: opts.borderColor || '#94a3b8',
+        backgroundColor: (opts.borderColor || '#94a3b8') + '18',
+        borderDash: opts.borderDash || [6, 4],
+        borderWidth: opts.borderWidth || 1.5,
+        fill: false,
+        ...opts,
+    };
+}
+
+export function makeUVSeries(weather) {
+    const data = weather.map(r => ({ x: r.timestamp, y: r.uv_index }));
+    return {
+        label: 'UV Index',
+        data,
+        borderColor: '#fbbf24',
+        backgroundColor: '#fbbf2440',
+        fill: true,
+        borderWidth: 1.5,
+    };
+}
+
+export function extractDaylightPairs(weather) {
+    const seen = new Set();
+    const pairs = [];
+    for (const r of weather) {
+        if (!r.sunrise || !r.sunset) continue;
+        const dayKey = r.sunrise.slice(0, 10);
+        if (seen.has(dayKey)) continue;
+        seen.add(dayKey);
+        pairs.push({ sunrise: new Date(r.sunrise), sunset: new Date(r.sunset) });
+    }
+    return pairs;
 }

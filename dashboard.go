@@ -4,11 +4,16 @@ import (
 	"encoding/csv"
 	"encoding/json"
 	"errors"
+	"log"
 	"net/http"
 	"os"
 	"strconv"
+	"time"
 
 	_ "embed"
+
+	"github.com/hazel/airquality/openmeteo"
+	"github.com/hazel/airquality/store"
 )
 
 //go:embed dashboard.html
@@ -18,8 +23,48 @@ var dashboardHTML string
 var roomsHTML string
 
 type dashboardData struct {
-	Sensors  []sensorData   `json:"sensors"`
-	ACStates []acStateData `json:"ac_states"`
+	Sensors  []sensorData     `json:"sensors"`
+	ACStates []acStateData    `json:"ac_states"`
+	Weather  []weatherReading `json:"weather"`
+}
+
+type weatherReading struct {
+	Timestamp       string  `json:"timestamp"`
+	TempC           float64 `json:"temp_c"`
+	Humidity        float64 `json:"humidity"`
+	DewPointC       float64 `json:"dewpoint_c"`
+	PrecipitationMM float64 `json:"precipitation_mm"`
+	WeatherCode     int     `json:"weather_code"`
+	PressureHPa     float64 `json:"pressure_hpa"`
+	WindSpeedKMH    float64 `json:"wind_speed_kmh"`
+	UVIndex         float64 `json:"uv_index"`
+	Sunrise         string  `json:"sunrise"` // RFC3339, "" if zero
+	Sunset          string  `json:"sunset"`  // RFC3339, "" if zero
+}
+
+func weatherReadings(rows []openmeteo.Reading) []weatherReading {
+	out := make([]weatherReading, 0, len(rows))
+	for _, r := range rows {
+		wr := weatherReading{
+			Timestamp:       r.Time.UTC().Format(time.RFC3339),
+			TempC:           r.TempC,
+			Humidity:        r.Humidity,
+			DewPointC:       r.DewPointC,
+			PrecipitationMM: r.PrecipitationMM,
+			WeatherCode:     r.WeatherCode,
+			PressureHPa:     r.PressureHPa,
+			WindSpeedKMH:    r.WindSpeedKMH,
+			UVIndex:         r.UVIndex,
+		}
+		if !r.Sunrise.IsZero() {
+			wr.Sunrise = r.Sunrise.UTC().Format(time.RFC3339)
+		}
+		if !r.Sunset.IsZero() {
+			wr.Sunset = r.Sunset.UTC().Format(time.RFC3339)
+		}
+		out = append(out, wr)
+	}
+	return out
 }
 
 type sensorData struct {
@@ -207,13 +252,39 @@ func parseCSVBool(s string) bool {
 	return v
 }
 
-func dataHandler(csvPath string, acPath string) http.HandlerFunc {
+func dataHandler(csvPath string, acPath string, db *store.Store) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		data, err := parseCSVData(csvPath, acPath)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
+
+		data.Weather = []weatherReading{}
+		if db != nil && len(data.Sensors) > 0 {
+			// Find oldest sensor reading to set the weather query window.
+			var minT time.Time
+			for _, s := range data.Sensors {
+				for _, rd := range s.Readings {
+					t, err := time.Parse(time.RFC3339, rd.Timestamp)
+					if err != nil {
+						continue
+					}
+					if minT.IsZero() || t.Before(minT) {
+						minT = t
+					}
+				}
+			}
+			if !minT.IsZero() {
+				rows, err := db.QueryWeather(r.Context(), minT, time.Now().UTC())
+				if err != nil {
+					log.Printf("Warning: weather query: %v", err)
+				} else {
+					data.Weather = weatherReadings(rows)
+				}
+			}
+		}
+
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(data)
 	}

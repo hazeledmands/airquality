@@ -1,8 +1,9 @@
-import { REFRESH_MS, cToF, filterByRange, buildRoomDatasets, computeStatus, getAspectRatio } from './data.js';
+import { REFRESH_MS, cToF, filterByRange, buildRoomDatasets, computeStatus, getAspectRatio, makeWeatherTempSeries, makeUVSeries, extractDaylightPairs } from './data.js';
 import { xTickCallback } from './charts.js';
 import { crosshairPlugin, registerChart, unregisterChart } from './crosshair.js';
 import { maximaLabelsPlugin, setMaximaLabelsEnabled } from './maxima-labels.js';
 import { humidityHighlightPlugin, setHumidityHighlightEnabled } from './humidity-highlight.js';
+import { daylightPlugin, setDaylightEnabled, setDaylightPairs } from './daylight-plugin.js';
 import { setupDateRange } from './daterange.js';
 import { createDragHandle } from './chart-card.js';
 import { setupReorder } from './reorder.js';
@@ -10,6 +11,7 @@ import { setupReorder } from './reorder.js';
 Chart.register(crosshairPlugin);
 Chart.register(maximaLabelsPlugin);
 Chart.register(humidityHighlightPlugin);
+Chart.register(daylightPlugin);
 
 const METRIC_COLORS = {
     temp:     '#fb923c', // orange
@@ -22,6 +24,8 @@ const METRIC_COLORS = {
 let allData = null;
 let roomCharts = []; // { room, chart }
 let reorder = null;
+let outdoorTempEnabled = false;
+let currentWeather = [];
 
 function isIndoorRoom(room) {
     return !/outside/i.test(room.name);
@@ -158,7 +162,116 @@ function buildCombinedDatasets(room) {
         });
     }
 
+    if (outdoorTempEnabled && currentWeather.length > 0 && isIndoorRoom(room)) {
+        datasets.push({
+            ...makeWeatherTempSeries(currentWeather),
+            yAxisID: 'y',
+        });
+    }
+
     return datasets;
+}
+
+function weatherChartOpts(ar) {
+    return {
+        responsive: true,
+        maintainAspectRatio: true,
+        aspectRatio: ar,
+        animation: { duration: 300 },
+        interaction: { mode: 'index', intersect: false },
+        scales: {
+            x: {
+                type: 'time',
+                time: { tooltipFormat: 'ff' },
+                ticks: { color: '#555', autoSkip: true, maxTicksLimit: 8, maxRotation: 0, callback: xTickCallback, major: { enabled: true } },
+                grid: { color: '#ffffff06' },
+            },
+            y: {
+                type: 'linear',
+                position: 'left',
+                title: { display: true, text: '\u00B0F', color: '#888', font: { size: 11 } },
+                ticks: { color: '#888' },
+                grid: { color: '#ffffff06' },
+            },
+            yUV: {
+                type: 'linear',
+                position: 'right',
+                title: { display: true, text: 'UV', color: '#888', font: { size: 11 } },
+                ticks: { color: '#888' },
+                grid: { drawOnChartArea: false },
+                min: 0,
+            },
+        },
+        plugins: {
+            legend: { labels: { color: '#999', boxWidth: 12, padding: 12 } },
+            tooltip: { backgroundColor: '#1e1e30', titleColor: '#ccc', bodyColor: '#aaa', borderColor: '#333', borderWidth: 1 },
+            humidityHighlight: { enabled: false },
+        },
+        elements: {
+            point: { radius: 0, hoverRadius: 4 },
+            line: { borderWidth: 2, tension: 0.3 },
+        },
+    };
+}
+
+function buildWeatherCard(weather, ar) {
+    const section = document.createElement('div');
+    section.className = 'room-section';
+    section.dataset.chartId = '__weather__';
+
+    const heading = document.createElement('h2');
+    heading.style.color = '#94a3b8';
+    heading.appendChild(createDragHandle());
+    heading.appendChild(document.createTextNode('Outdoor Weather'));
+    section.appendChild(heading);
+
+    const strip = document.createElement('div');
+    strip.className = 'room-latest';
+    strip.id = 'weather-current';
+    section.appendChild(strip);
+
+    const card = document.createElement('div');
+    card.className = 'chart-card';
+    const canvas = document.createElement('canvas');
+    card.appendChild(canvas);
+    section.appendChild(card);
+
+    const chart = new Chart(canvas, {
+        type: 'line',
+        data: { datasets: [] },
+        options: weatherChartOpts(ar),
+    });
+
+    registerChart(chart);
+    roomCharts.push({ room: '__weather__', chart });
+    return section;
+}
+
+function updateWeatherCard(weather) {
+    const strip = document.getElementById('weather-current');
+    const rc = roomCharts.find(r => r.room === '__weather__');
+    if (!rc) return;
+
+    if (weather.length > 0) {
+        const latest = weather[weather.length - 1];
+        const parts = [
+            `<span><span class="value">${cToF(latest.temp_c).toFixed(1)}\u00B0F</span></span>`,
+            `<span><span class="value">${latest.humidity.toFixed(0)}%</span> humidity</span>`,
+        ];
+        if (latest.wind_speed_kmh) {
+            parts.push(`<span><span class="value">${latest.wind_speed_kmh.toFixed(1)}</span> km/h wind</span>`);
+        }
+        if (latest.precipitation_mm) {
+            parts.push(`<span><span class="value">${latest.precipitation_mm.toFixed(1)}</span> mm precip</span>`);
+        }
+        if (strip) strip.innerHTML = parts.join('');
+
+        rc.chart.data.datasets = [
+            { ...makeWeatherTempSeries(weather), yAxisID: 'y' },
+            { ...makeUVSeries(weather), yAxisID: 'yUV' },
+        ];
+        rc.chart.update();
+    }
 }
 
 function buildRoomDOM(rooms) {
@@ -172,6 +285,10 @@ function buildRoomDOM(rooms) {
     roomCharts = [];
 
     const ar = getAspectRatio(window.innerWidth);
+
+    if (currentWeather.length > 0) {
+        container.appendChild(buildWeatherCard(currentWeather, ar));
+    }
 
     for (const room of rooms) {
         const section = document.createElement('div');
@@ -237,6 +354,9 @@ function updateLatestValues(rooms) {
 function updateCharts(data) {
     const sensors = data.sensors || [];
     const acStates = data.ac_states || [];
+    const weather = data.weather || [];
+    currentWeather = weather;
+    setDaylightPairs(extractDaylightPairs(weather));
 
     if (!sensors.length && !acStates.length) {
         document.getElementById('status').textContent = 'No data yet.';
@@ -249,13 +369,15 @@ function updateCharts(data) {
 
     const rooms = buildRoomDatasets(sensors, acStates);
 
-    // Rebuild DOM if room set changed
+    // Rebuild DOM if room set or weather presence changed
     const currentRooms = roomCharts.map(rc => rc.room);
-    const newRooms = rooms.map(r => r.name);
+    const newRooms = (weather.length > 0 ? ['__weather__'] : []).concat(rooms.map(r => r.name));
     if (currentRooms.length !== newRooms.length || currentRooms.some((r, i) => r !== newRooms[i])) {
         for (const rc of roomCharts) rc.chart.destroy();
         buildRoomDOM(rooms);
     }
+
+    updateWeatherCard(weather);
 
     // Update chart data
     for (const room of rooms) {
@@ -326,6 +448,22 @@ humidityCheckbox.addEventListener('change', () => {
     const url = new URL(window.location);
     if (humidityCheckbox.checked) url.searchParams.delete('humidity');
     else url.searchParams.set('humidity', '0');
+    history.replaceState(null, '', url);
+    for (const rc of roomCharts) rc.chart.update();
+});
+
+// Outdoor temp checkbox — restore from URL, persist changes
+const outdoorTempCheckbox = document.getElementById('showOutdoorTemp');
+const outdoorTempParam = new URLSearchParams(window.location.search).get('outdoorTemp');
+if (outdoorTempParam !== null) {
+    outdoorTempCheckbox.checked = outdoorTempParam === '1';
+}
+outdoorTempEnabled = outdoorTempCheckbox.checked;
+outdoorTempCheckbox.addEventListener('change', () => {
+    outdoorTempEnabled = outdoorTempCheckbox.checked;
+    const url = new URL(window.location);
+    if (outdoorTempCheckbox.checked) url.searchParams.set('outdoorTemp', '1');
+    else url.searchParams.delete('outdoorTemp');
     history.replaceState(null, '', url);
     for (const rc of roomCharts) rc.chart.update();
 });

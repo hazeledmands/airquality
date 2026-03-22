@@ -181,7 +181,7 @@ func TestDataHandler_ReturnsJSON(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	handler := dataHandler(airFile.Name(), acFile.Name())
+	handler := dataHandler(airFile.Name(), acFile.Name(), nil)
 	req := httptest.NewRequest("GET", "/api/data", nil)
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, req)

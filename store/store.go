@@ -113,6 +113,45 @@ func (s *Store) InsertWeather(ctx context.Context, r openmeteo.Reading) error {
 	return nil
 }
 
+// QueryWeather returns weather rows between from (inclusive) and to (exclusive),
+// ordered ascending. Returns an empty slice (not an error) when the table is empty.
+func (s *Store) QueryWeather(ctx context.Context, from, to time.Time) ([]openmeteo.Reading, error) {
+	rows, err := s.pool.Query(ctx, `
+		SELECT timestamp, temp_c, humidity, dewpoint_c,
+		       precipitation_mm, weather_code, pressure_hpa,
+		       wind_speed_kmh, uv_index, sunrise, sunset
+		FROM weather
+		WHERE timestamp >= $1 AND timestamp < $2
+		ORDER BY timestamp ASC`,
+		from, to,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("query weather: %w", err)
+	}
+	defer rows.Close()
+
+	var result []openmeteo.Reading
+	for rows.Next() {
+		var r openmeteo.Reading
+		var sunrise, sunset *time.Time
+		if err := rows.Scan(
+			&r.Time, &r.TempC, &r.Humidity, &r.DewPointC,
+			&r.PrecipitationMM, &r.WeatherCode, &r.PressureHPa,
+			&r.WindSpeedKMH, &r.UVIndex, &sunrise, &sunset,
+		); err != nil {
+			return nil, fmt.Errorf("scan weather row: %w", err)
+		}
+		if sunrise != nil {
+			r.Sunrise = *sunrise
+		}
+		if sunset != nil {
+			r.Sunset = *sunset
+		}
+		result = append(result, r)
+	}
+	return result, rows.Err()
+}
+
 // BatchInsertReadings inserts multiple readings in a single round-trip.
 func (s *Store) BatchInsertReadings(ctx context.Context, records []logger.Record) error {
 	if len(records) == 0 {
