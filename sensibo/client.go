@@ -6,10 +6,13 @@ import (
 	"io"
 	"math"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/hazel/airquality/calc"
 )
+
+const maxRetries = 3
 
 var baseURL = "https://home.sensibo.com/api/v2"
 
@@ -20,6 +23,8 @@ func setBaseURL(url string) { baseURL = url }
 type Client struct {
 	APIKey     string
 	HTTPClient *http.Client
+	// retryDelay is the base delay for exponential backoff (default 1s; overridable in tests).
+	retryDelay time.Duration
 }
 
 // NewClient creates a Sensibo API client.
@@ -29,29 +34,60 @@ func NewClient(apiKey string) *Client {
 		HTTPClient: &http.Client{
 			Timeout: 30 * time.Second,
 		},
+		retryDelay: time.Second,
 	}
 }
 
 func (c *Client) get(path string) ([]byte, error) {
 	url := fmt.Sprintf("%s%s&apiKey=%s", baseURL, path, c.APIKey)
-	req, err := http.NewRequest("GET", url, nil)
-	if err != nil {
-		return nil, err
-	}
-	// Go's default transport handles Accept-Encoding: gzip automatically.
 
-	resp, err := c.HTTPClient.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
+	var lastErr error
+	for attempt := 0; attempt <= maxRetries; attempt++ {
+		if attempt > 0 {
+			time.Sleep(c.retryDelay * time.Duration(1<<(attempt-1)))
+		}
 
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("API error %d: %s", resp.StatusCode, string(body))
+		req, err := http.NewRequest("GET", url, nil)
+		if err != nil {
+			return nil, err
+		}
+		// Go's default transport handles Accept-Encoding: gzip automatically.
+
+		resp, err := c.HTTPClient.Do(req)
+		if err != nil {
+			return nil, err
+		}
+
+		if resp.StatusCode == http.StatusTooManyRequests {
+			body, _ := io.ReadAll(resp.Body)
+			resp.Body.Close()
+			lastErr = fmt.Errorf("API error %d: %s", resp.StatusCode, string(body))
+
+			// Honor Retry-After header if present.
+			if ra := resp.Header.Get("Retry-After"); ra != "" {
+				if secs, err := strconv.Atoi(ra); err == nil {
+					time.Sleep(time.Duration(secs) * time.Second)
+					attempt-- // don't count this against the retry budget
+					if attempt < -maxRetries {
+						break // safety valve
+					}
+					continue
+				}
+			}
+			continue
+		}
+
+		if resp.StatusCode != http.StatusOK {
+			body, _ := io.ReadAll(resp.Body)
+			resp.Body.Close()
+			return nil, fmt.Errorf("API error %d: %s", resp.StatusCode, string(body))
+		}
+
+		defer resp.Body.Close()
+		return io.ReadAll(resp.Body)
 	}
 
-	return io.ReadAll(resp.Body)
+	return nil, fmt.Errorf("API rate limited after %d retries: %w", maxRetries, lastErr)
 }
 
 // GetDevices returns all devices associated with the account.

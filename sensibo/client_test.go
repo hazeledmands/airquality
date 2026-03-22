@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 )
 
 func TestGetDevices(t *testing.T) {
@@ -90,6 +91,89 @@ func TestGetDevices_APIError(t *testing.T) {
 	_, err := c.GetDevices()
 	if err == nil {
 		t.Fatal("expected error for 403 response")
+	}
+}
+
+func TestGet_RetriesOn429(t *testing.T) {
+	attempts := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		attempts++
+		if attempts < 3 {
+			w.WriteHeader(http.StatusTooManyRequests)
+			w.Write([]byte(`{"status":429,"message":"API Limit exceeded"}`))
+			return
+		}
+		w.Write([]byte(`{"status":"success","result":[]}`))
+	}))
+	defer srv.Close()
+
+	c := NewClient("test-key")
+	c.retryDelay = 1 * time.Millisecond
+	origBase := baseURL
+	defer func() { setBaseURL(origBase) }()
+	setBaseURL(srv.URL)
+
+	_, err := c.GetDevices()
+	if err != nil {
+		t.Fatalf("expected success after retries, got: %v", err)
+	}
+	if attempts != 3 {
+		t.Errorf("expected 3 attempts, got %d", attempts)
+	}
+}
+
+func TestGet_RespectsRetryAfterHeader(t *testing.T) {
+	attempts := 0
+	var retryAfterSeen string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		attempts++
+		if attempts == 1 {
+			w.Header().Set("Retry-After", "0")
+			w.WriteHeader(http.StatusTooManyRequests)
+			w.Write([]byte(`{"status":429,"message":"API Limit exceeded"}`))
+			return
+		}
+		retryAfterSeen = "waited"
+		w.Write([]byte(`{"status":"success","result":[]}`))
+	}))
+	defer srv.Close()
+
+	c := NewClient("test-key")
+	c.retryDelay = 1 * time.Millisecond
+	origBase := baseURL
+	defer func() { setBaseURL(origBase) }()
+	setBaseURL(srv.URL)
+
+	_, err := c.GetDevices()
+	if err != nil {
+		t.Fatalf("expected success after retry, got: %v", err)
+	}
+	if retryAfterSeen != "waited" {
+		t.Error("expected second attempt to be made")
+	}
+}
+
+func TestGet_GivesUpAfterMaxRetries(t *testing.T) {
+	attempts := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		attempts++
+		w.WriteHeader(http.StatusTooManyRequests)
+		w.Write([]byte(`{"status":429,"message":"API Limit exceeded"}`))
+	}))
+	defer srv.Close()
+
+	c := NewClient("test-key")
+	c.retryDelay = 1 * time.Millisecond
+	origBase := baseURL
+	defer func() { setBaseURL(origBase) }()
+	setBaseURL(srv.URL)
+
+	_, err := c.GetDevices()
+	if err == nil {
+		t.Fatal("expected error after max retries")
+	}
+	if attempts != maxRetries+1 {
+		t.Errorf("expected %d attempts, got %d", maxRetries+1, attempts)
 	}
 }
 
