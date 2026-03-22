@@ -2,12 +2,14 @@ import { REFRESH_MS, cToF, filterByRange, buildRoomDatasets, computeStatus, getA
 import { xTickCallback } from './charts.js';
 import { crosshairPlugin, registerChart, unregisterChart } from './crosshair.js';
 import { maximaLabelsPlugin, setMaximaLabelsEnabled } from './maxima-labels.js';
+import { humidityHighlightPlugin, setHumidityHighlightEnabled } from './humidity-highlight.js';
 import { setupDateRange } from './daterange.js';
 import { createDragHandle } from './chart-card.js';
 import { setupReorder } from './reorder.js';
 
 Chart.register(crosshairPlugin);
 Chart.register(maximaLabelsPlugin);
+Chart.register(humidityHighlightPlugin);
 
 const METRIC_COLORS = {
     temp:     '#fb923c', // orange
@@ -21,9 +23,14 @@ let allData = null;
 let roomCharts = []; // { room, chart }
 let reorder = null;
 
+function isIndoorRoom(room) {
+    return !/outside/i.test(room.name);
+}
+
 function combinedChartOpts(ar, room) {
     const hasPM = room.pm.length > 0;
     const hasAC = room.acState.length > 0;
+    const indoor = isIndoorRoom(room);
 
     const opts = {
         responsive: true,
@@ -58,6 +65,7 @@ function combinedChartOpts(ar, room) {
         plugins: {
             legend: { labels: { color: '#999', boxWidth: 12, padding: 12 } },
             tooltip: { backgroundColor: '#1e1e30', titleColor: '#ccc', bodyColor: '#aaa', borderColor: '#333', borderWidth: 1 },
+            humidityHighlight: { enabled: indoor, threshold: 60 },
         },
         elements: {
             point: { radius: 0, hoverRadius: 4 },
@@ -302,6 +310,22 @@ peaksCheckbox.addEventListener('change', () => {
     const url = new URL(window.location);
     if (peaksCheckbox.checked) url.searchParams.delete('peaks');
     else url.searchParams.set('peaks', '0');
+    history.replaceState(null, '', url);
+    for (const rc of roomCharts) rc.chart.update();
+});
+
+// High humidity checkbox — restore from URL, persist changes
+const humidityCheckbox = document.getElementById('showHumidity');
+const humidityParam = new URLSearchParams(window.location.search).get('humidity');
+if (humidityParam !== null) {
+    humidityCheckbox.checked = humidityParam !== '0';
+}
+setHumidityHighlightEnabled(humidityCheckbox.checked);
+humidityCheckbox.addEventListener('change', () => {
+    setHumidityHighlightEnabled(humidityCheckbox.checked);
+    const url = new URL(window.location);
+    if (humidityCheckbox.checked) url.searchParams.delete('humidity');
+    else url.searchParams.set('humidity', '0');
     history.replaceState(null, '', url);
     for (const rc of roomCharts) rc.chart.update();
 });
