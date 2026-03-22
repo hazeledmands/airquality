@@ -117,7 +117,7 @@ func (s *Store) InsertWeather(ctx context.Context, r openmeteo.Reading) error {
 // ordered ascending. Returns an empty slice (not an error) when the table is empty.
 func (s *Store) QueryWeather(ctx context.Context, from, to time.Time) ([]openmeteo.Reading, error) {
 	rows, err := s.pool.Query(ctx, `
-		SELECT timestamp, temp_c, humidity, dewpoint_c,
+		SELECT timestamp, latitude, longitude, temp_c, humidity, dewpoint_c,
 		       precipitation_mm, weather_code, pressure_hpa,
 		       wind_speed_kmh, uv_index, sunrise, sunset
 		FROM weather
@@ -135,7 +135,7 @@ func (s *Store) QueryWeather(ctx context.Context, from, to time.Time) ([]openmet
 		var r openmeteo.Reading
 		var sunrise, sunset *time.Time
 		if err := rows.Scan(
-			&r.Time, &r.TempC, &r.Humidity, &r.DewPointC,
+			&r.Time, &r.Latitude, &r.Longitude, &r.TempC, &r.Humidity, &r.DewPointC,
 			&r.PrecipitationMM, &r.WeatherCode, &r.PressureHPa,
 			&r.WindSpeedKMH, &r.UVIndex, &sunrise, &sunset,
 		); err != nil {

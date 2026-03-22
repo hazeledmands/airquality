@@ -222,7 +222,10 @@ function buildWeatherCard(weather, ar) {
     const heading = document.createElement('h2');
     heading.style.color = '#94a3b8';
     heading.appendChild(createDragHandle());
-    heading.appendChild(document.createTextNode('Outdoor Weather'));
+    const lat = weather[0]?.latitude?.toFixed(4) ?? '';
+    const lon = weather[0]?.longitude?.toFixed(4) ?? '';
+    const title = lat && lon ? `Open-Meteo (${lat}, ${lon})` : 'Open-Meteo';
+    heading.appendChild(document.createTextNode(title));
     section.appendChild(heading);
 
     const strip = document.createElement('div');

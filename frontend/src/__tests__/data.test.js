@@ -345,19 +345,19 @@ describe('getDataRange', () => {
 
 describe('getAspectRatio', () => {
     it('returns wider ratio for desktop widths', () => {
-        expect(getAspectRatio(1280)).toBe(2);
+        expect(getAspectRatio(1280)).toBe(4);
     });
 
     it('returns taller ratio for mobile widths', () => {
-        expect(getAspectRatio(375)).toBe(1.2);
+        expect(getAspectRatio(375)).toBe(2.4);
     });
 
     it('uses mobile ratio at exactly the breakpoint', () => {
-        expect(getAspectRatio(MOBILE_BREAKPOINT)).toBe(1.2);
+        expect(getAspectRatio(MOBILE_BREAKPOINT)).toBe(2.4);
     });
 
     it('uses desktop ratio above the breakpoint', () => {
-        expect(getAspectRatio(MOBILE_BREAKPOINT + 1)).toBe(2);
+        expect(getAspectRatio(MOBILE_BREAKPOINT + 1)).toBe(4);
     });
 });
 

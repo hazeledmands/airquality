@@ -30,6 +30,8 @@ type dashboardData struct {
 
 type weatherReading struct {
 	Timestamp       string  `json:"timestamp"`
+	Latitude        float64 `json:"latitude"`
+	Longitude       float64 `json:"longitude"`
 	TempC           float64 `json:"temp_c"`
 	Humidity        float64 `json:"humidity"`
 	DewPointC       float64 `json:"dewpoint_c"`
@@ -47,6 +49,8 @@ func weatherReadings(rows []openmeteo.Reading) []weatherReading {
 	for _, r := range rows {
 		wr := weatherReading{
 			Timestamp:       r.Time.UTC().Format(time.RFC3339),
+			Latitude:        r.Latitude,
+			Longitude:       r.Longitude,
 			TempC:           r.TempC,
 			Humidity:        r.Humidity,
 			DewPointC:       r.DewPointC,
