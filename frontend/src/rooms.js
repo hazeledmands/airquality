@@ -1,11 +1,13 @@
 import { REFRESH_MS, cToF, filterByRange, buildRoomDatasets, computeStatus, getAspectRatio } from './data.js';
 import { xTickCallback } from './charts.js';
 import { crosshairPlugin, registerChart, unregisterChart } from './crosshair.js';
+import { maximaLabelsPlugin, setMaximaLabelsEnabled } from './maxima-labels.js';
 import { setupDateRange } from './daterange.js';
 import { createDragHandle } from './chart-card.js';
 import { setupReorder } from './reorder.js';
 
 Chart.register(crosshairPlugin);
+Chart.register(maximaLabelsPlugin);
 
 const METRIC_COLORS = {
     temp:     '#fb923c', // orange
@@ -96,6 +98,7 @@ function buildCombinedDatasets(room) {
             yAxisID: 'y',
             borderColor: METRIC_COLORS.temp,
             backgroundColor: METRIC_COLORS.temp + '18',
+            peakUnit: '\u00B0F',
         });
     }
 
@@ -107,6 +110,7 @@ function buildCombinedDatasets(room) {
             borderColor: METRIC_COLORS.dewpoint,
             backgroundColor: METRIC_COLORS.dewpoint + '18',
             borderDash: [5, 3],
+            peakUnit: '\u00B0F',
         });
     }
 
@@ -117,6 +121,7 @@ function buildCombinedDatasets(room) {
             yAxisID: 'y1',
             borderColor: METRIC_COLORS.humidity,
             backgroundColor: METRIC_COLORS.humidity + '18',
+            peakUnit: '%',
         });
     }
 
@@ -127,6 +132,7 @@ function buildCombinedDatasets(room) {
             yAxisID: 'y2',
             borderColor: METRIC_COLORS.pm,
             backgroundColor: METRIC_COLORS.pm + '18',
+            peakUnit: '\u00B5g/m\u00B3',
         });
     }
 
@@ -283,6 +289,22 @@ async function fetchData() {
         document.getElementById('status').textContent = 'Error: ' + err.message;
     }
 }
+
+// Peaks checkbox — restore from URL, persist changes
+const peaksCheckbox = document.getElementById('showPeaks');
+const peaksParam = new URLSearchParams(window.location.search).get('peaks');
+if (peaksParam !== null) {
+    peaksCheckbox.checked = peaksParam !== '0';
+}
+setMaximaLabelsEnabled(peaksCheckbox.checked);
+peaksCheckbox.addEventListener('change', () => {
+    setMaximaLabelsEnabled(peaksCheckbox.checked);
+    const url = new URL(window.location);
+    if (peaksCheckbox.checked) url.searchParams.delete('peaks');
+    else url.searchParams.set('peaks', '0');
+    history.replaceState(null, '', url);
+    for (const rc of roomCharts) rc.chart.update();
+});
 
 reorder = setupReorder(document.getElementById('rooms-container'), {
     itemSelector: '.room-section',

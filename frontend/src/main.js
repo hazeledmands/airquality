@@ -1,10 +1,12 @@
 import { COLORS, REFRESH_MS, cToF, filterByRange, buildDatasets, computeStatus, getAspectRatio } from './data.js';
 import { chartOpts } from './charts.js';
 import { crosshairPlugin, registerChart } from './crosshair.js';
+import { maximaLabelsPlugin, setMaximaLabelsEnabled } from './maxima-labels.js';
 import { setupDateRange } from './daterange.js';
 import { setupReorder } from './reorder.js';
 
 Chart.register(crosshairPlugin);
+Chart.register(maximaLabelsPlugin);
 
 const charts = {};
 let allData = null;
@@ -68,6 +70,10 @@ function updateCharts(data) {
     }
 
     const ds = buildDatasets(sensors, acStates);
+    ds.temp.forEach(d => d.peakUnit = '\u00B0F');
+    ds.humidity.forEach(d => d.peakUnit = '%');
+    ds.dewpoint.forEach(d => d.peakUnit = '\u00B0F');
+    ds.pm.forEach(d => d.peakUnit = '\u00B5g/m\u00B3');
     charts.temp.data.datasets = ds.temp;
     charts.humidity.data.datasets = ds.humidity;
     charts.dewpoint.data.datasets = ds.dewpoint;
@@ -108,6 +114,22 @@ async function fetchData() {
         document.getElementById('status').textContent = 'Error: ' + err.message;
     }
 }
+
+// Peaks checkbox — restore from URL, persist changes
+const peaksCheckbox = document.getElementById('showPeaks');
+const peaksParam = new URLSearchParams(window.location.search).get('peaks');
+if (peaksParam !== null) {
+    peaksCheckbox.checked = peaksParam !== '0';
+}
+setMaximaLabelsEnabled(peaksCheckbox.checked);
+peaksCheckbox.addEventListener('change', () => {
+    setMaximaLabelsEnabled(peaksCheckbox.checked);
+    const url = new URL(window.location);
+    if (peaksCheckbox.checked) url.searchParams.delete('peaks');
+    else url.searchParams.set('peaks', '0');
+    history.replaceState(null, '', url);
+    for (const chart of Object.values(charts)) chart.update();
+});
 
 initCharts();
 setupReorder(document.querySelector('.charts'));

@@ -69,6 +69,16 @@
         }
         .date-range button:hover { background: #ffffff18; color: #ccc; }
         .date-range button.active { background: #38bdf820; border-color: #38bdf8; color: #38bdf8; }
+        .toggle-label {
+            font-size: 0.75rem;
+            color: #888;
+            cursor: pointer;
+            user-select: none;
+            display: flex;
+            align-items: center;
+            gap: 0.3rem;
+        }
+        .toggle-label input { cursor: pointer; }
         .room-section {
             margin-bottom: 2rem;
         }
@@ -159,6 +169,7 @@
         <label for="rangeTo">To</label>
         <input type="datetime-local" id="rangeTo">
         <button id="rangeReset">Reset</button>
+        <label class="toggle-label"><input type="checkbox" id="showPeaks" checked> Peaks</label>
     </div>
     <div id="rooms-container"></div>
     <script type="module" src="/src/rooms.js"></script>
