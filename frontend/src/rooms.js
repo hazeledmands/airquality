@@ -10,6 +10,7 @@ import { createDragHandle } from './chart-card.js';
 import { setupReorder } from './reorder.js';
 import { computeXRange, syncXAxes, computeYRange, syncYAxes } from './axis-sync.js';
 import { annotationsPlugin, setAnnotations, setupAnnotationUI } from './annotations.js';
+import { getParam, setParam } from './url-state.js';
 
 Chart.register(crosshairPlugin);
 Chart.register(maximaLabelsPlugin);
@@ -475,49 +476,31 @@ async function fetchData() {
 
 // Peaks checkbox — restore from URL, persist changes
 const peaksCheckbox = document.getElementById('showPeaks');
-const peaksParam = new URLSearchParams(window.location.search).get('peaks');
-if (peaksParam !== null) {
-    peaksCheckbox.checked = peaksParam !== '0';
-}
+if (getParam('peaks') !== null) peaksCheckbox.checked = getParam('peaks') !== '0';
 setMaximaLabelsEnabled(peaksCheckbox.checked);
 peaksCheckbox.addEventListener('change', () => {
     setMaximaLabelsEnabled(peaksCheckbox.checked);
-    const url = new URL(window.location);
-    if (peaksCheckbox.checked) url.searchParams.delete('peaks');
-    else url.searchParams.set('peaks', '0');
-    history.replaceState(null, '', url);
+    setParam('peaks', peaksCheckbox.checked ? null : '0');
     for (const rc of roomCharts) rc.chart.update();
 });
 
 // High humidity checkbox — restore from URL, persist changes
 const humidityCheckbox = document.getElementById('showHumidity');
-const humidityParam = new URLSearchParams(window.location.search).get('humidity');
-if (humidityParam !== null) {
-    humidityCheckbox.checked = humidityParam !== '0';
-}
+if (getParam('humidity') !== null) humidityCheckbox.checked = getParam('humidity') !== '0';
 setHumidityHighlightEnabled(humidityCheckbox.checked);
 humidityCheckbox.addEventListener('change', () => {
     setHumidityHighlightEnabled(humidityCheckbox.checked);
-    const url = new URL(window.location);
-    if (humidityCheckbox.checked) url.searchParams.delete('humidity');
-    else url.searchParams.set('humidity', '0');
-    history.replaceState(null, '', url);
+    setParam('humidity', humidityCheckbox.checked ? null : '0');
     for (const rc of roomCharts) rc.chart.update();
 });
 
 // Outdoor temp checkbox — restore from URL, persist changes
 const outdoorTempCheckbox = document.getElementById('showOutdoorTemp');
-const outdoorTempParam = new URLSearchParams(window.location.search).get('outdoorTemp');
-if (outdoorTempParam !== null) {
-    outdoorTempCheckbox.checked = outdoorTempParam === '1';
-}
+if (getParam('outdoorTemp') !== null) outdoorTempCheckbox.checked = getParam('outdoorTemp') === '1';
 outdoorTempEnabled = outdoorTempCheckbox.checked;
 outdoorTempCheckbox.addEventListener('change', () => {
     outdoorTempEnabled = outdoorTempCheckbox.checked;
-    const url = new URL(window.location);
-    if (outdoorTempCheckbox.checked) url.searchParams.set('outdoorTemp', '1');
-    else url.searchParams.delete('outdoorTemp');
-    history.replaceState(null, '', url);
+    setParam('outdoorTemp', outdoorTempCheckbox.checked ? '1' : null);
     for (const rc of roomCharts) rc.chart.update();
 });
 
