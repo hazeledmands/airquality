@@ -78,7 +78,8 @@ export const maximaLabelsPlugin = {
 
             for (const m of maxima) {
                 const num = Number.isInteger(m.value) ? String(m.value) : m.value.toFixed(1);
-                ctx.fillText(num + unit, m.x, m.y - 6);
+                const labelY = Math.max(m.y - 6, top + 12);
+                ctx.fillText(num + unit, m.x, labelY);
             }
             ctx.restore();
         }

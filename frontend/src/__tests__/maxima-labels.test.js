@@ -228,6 +228,25 @@ describe('maximaLabelsPlugin', () => {
         expect(calls[0][0]).toBe('78.8');
     });
 
+    it('clamps label y to stay inside the chart area when peak is near the top', () => {
+        // Peak data value maps to py=2 (nearly at chartArea.top=0).
+        // Label would naively be at py-6 = -4, which is above the chart area.
+        // It should be clamped to top+12 instead.
+        const ds = {
+            data: [{ y: 98 }, { y: 99 }, { y: 97 }],
+            borderColor: '#ff0000',
+        };
+        // Point y mapping: 200 - d.y * 2, so y=99 → py=2
+        const chart = makeChart([ds]);
+
+        maximaLabelsPlugin.afterDatasetsDraw(chart);
+
+        const calls = chart.ctx.fillText.mock.calls;
+        expect(calls.length).toBe(1);
+        const labelY = calls[0][2];
+        expect(labelY).toBeGreaterThanOrEqual(chart.chartArea.top + 12);
+    });
+
     it('suppresses lesser peak when dominated by nearby higher value', () => {
         // Simulates: high peak at 78.8 then a smaller bump at 76.6, close together
         const ds = {

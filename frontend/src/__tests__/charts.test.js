@@ -45,9 +45,9 @@ describe('chartOpts', () => {
         expect(opts.interaction.intersect).toBe(false);
     });
 
-    it('configures line tension for smooth curves', () => {
+    it('configures line tension to show actual data (no interpolation)', () => {
         const opts = chartOpts(2);
-        expect(opts.elements.line.tension).toBe(0.3);
+        expect(opts.elements.line.tension).toBe(0);
     });
 
     it('limits x-axis ticks', () => {
