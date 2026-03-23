@@ -22,8 +22,6 @@ import (
 
 type config struct {
 	interval time.Duration
-	output   string
-	acOutput string
 	port     int
 	verbose  bool
 	once     bool
@@ -35,9 +33,6 @@ func parseConfig(args []string) config {
 
 	fs.DurationVar(&cfg.interval, "interval", 1*time.Minute, "")
 	fs.DurationVar(&cfg.interval, "i", 1*time.Minute, "")
-	fs.StringVar(&cfg.output, "output", "airquality.csv", "")
-	fs.StringVar(&cfg.output, "o", "airquality.csv", "")
-	fs.StringVar(&cfg.acOutput, "ac-output", "acstates.csv", "")
 	fs.BoolVar(&cfg.verbose, "verbose", false, "")
 	fs.BoolVar(&cfg.verbose, "v", false, "")
 	fs.BoolVar(&cfg.once, "once", false, "")
@@ -52,12 +47,10 @@ func parseConfig(args []string) config {
 func printUsage(_ *flag.FlagSet) {
 	fmt.Fprintf(os.Stderr, `Usage: airquality [options]
 
-Continuously logs air quality sensor data to a CSV file.
+Continuously logs air quality sensor data to PostgreSQL.
 
 Options:
   -i, --interval duration   capture interval (default 1m)
-  -o, --output string       output CSV file path (default "airquality.csv")
-      --ac-output string    AC state changes CSV file path (default "acstates.csv")
   -p, --port int            prometheus metrics port (default 50233)
   -v, --verbose             print detailed sensor data on each capture
       --once                capture once and exit
@@ -66,6 +59,7 @@ Options:
 Environment:
   SENSIBO_API_KEY     Sensibo cloud API key
   PURPLEAIR_HOSTS     comma-separated PurpleAir sensor IPs
+  DATABASE_URL        PostgreSQL connection string (required)
 
 At least one sensor must be configured.
 `)
@@ -82,43 +76,21 @@ func main() {
 		log.Fatal("No sensors configured. Set SENSIBO_API_KEY and/or PURPLEAIR_HOSTS.")
 	}
 
-	csvLog, err := logger.NewCSVLogger(cfg.output)
+	dbURL := os.Getenv("DATABASE_URL")
+	if dbURL == "" {
+		log.Fatal("DATABASE_URL is required.")
+	}
+	db, err := store.New(context.Background(), dbURL)
 	if err != nil {
-		log.Fatalf("Failed to open log file: %v", err)
+		log.Fatalf("Failed to connect to database: %v", err)
 	}
-	defer csvLog.Close()
-
-	var acLog *logger.ACStateCSVLogger
-	var acExistingIDs map[string]bool
-	if sensiboKey != "" {
-		acExistingIDs, err = logger.LoadExistingACStateIDs(cfg.acOutput)
-		if err != nil {
-			log.Fatalf("Failed to load AC state log: %v", err)
-		}
-		acLog, err = logger.NewACStateCSVLogger(cfg.acOutput)
-		if err != nil {
-			log.Fatalf("Failed to open AC state log: %v", err)
-		}
-		defer acLog.Close()
-		log.Printf("Tracking AC state changes in %s (%d existing entries)", cfg.acOutput, len(acExistingIDs))
-	}
+	defer db.Close()
+	log.Printf("Connected to database")
 
 	m := metrics.New()
 
-	var db *store.Store
-	if dbURL := os.Getenv("DATABASE_URL"); dbURL != "" {
-		var err error
-		db, err = store.New(context.Background(), dbURL)
-		if err != nil {
-			log.Printf("Warning: could not connect to database: %v", err)
-		} else {
-			defer db.Close()
-			log.Printf("Connected to database")
-		}
-	}
-
 	if cfg.once {
-		captureAll(csvLog, acLog, acExistingIDs, m, db, sensiboKey, purpleairHosts, weatherClient, cfg.verbose)
+		captureAll(m, db, sensiboKey, purpleairHosts, weatherClient, cfg.verbose)
 		return
 	}
 
@@ -126,7 +98,7 @@ func main() {
 		addr := fmt.Sprintf(":%d", cfg.port)
 		mux := http.NewServeMux()
 		mux.Handle("/metrics", m.Handler())
-		mux.HandleFunc("/api/data", dataHandler(cfg.output, cfg.acOutput, db))
+		mux.HandleFunc("/api/data", dataHandler(db))
 		mux.HandleFunc("/by-metric", dashboardHandler())
 		mux.HandleFunc("/", roomsHandler())
 		log.Printf("Dashboard at http://0.0.0.0:%d/ (accessible from any machine on the network)", cfg.port)
@@ -136,8 +108,8 @@ func main() {
 		}
 	}()
 
-	log.Printf("Logging to %s every %s (Ctrl+C to stop)", cfg.output, cfg.interval)
-	captureAll(csvLog, acLog, acExistingIDs, m, db, sensiboKey, purpleairHosts, weatherClient, cfg.verbose)
+	log.Printf("Logging to database every %s (Ctrl+C to stop)", cfg.interval)
+	captureAll(m, db, sensiboKey, purpleairHosts, weatherClient, cfg.verbose)
 
 	ticker := time.NewTicker(cfg.interval)
 	defer ticker.Stop()
@@ -148,7 +120,7 @@ func main() {
 	for {
 		select {
 		case <-ticker.C:
-			captureAll(csvLog, acLog, acExistingIDs, m, db, sensiboKey, purpleairHosts, weatherClient, cfg.verbose)
+			captureAll(m, db, sensiboKey, purpleairHosts, weatherClient, cfg.verbose)
 		case <-sig:
 			log.Println("Stopping.")
 			return
@@ -156,22 +128,22 @@ func main() {
 	}
 }
 
-func captureAll(csvLog *logger.CSVLogger, acLog *logger.ACStateCSVLogger, acExistingIDs map[string]bool, m *metrics.Metrics, db *store.Store, sensiboKey string, purpleairHosts []string, weatherClient *openmeteo.Client, verbose bool) {
+func captureAll(m *metrics.Metrics, db *store.Store, sensiboKey string, purpleairHosts []string, weatherClient *openmeteo.Client, verbose bool) {
 	now := time.Now()
 
 	if sensiboKey != "" {
-		captureSensibo(csvLog, m, db, sensiboKey, now, verbose)
-		captureACStates(acLog, acExistingIDs, db, sensiboKey, verbose)
+		captureSensibo(m, db, sensiboKey, now, verbose)
+		captureACStates(db, sensiboKey, verbose)
 	}
 	if len(purpleairHosts) > 0 {
-		capturePurpleAir(csvLog, m, db, purpleairHosts, now, verbose)
+		capturePurpleAir(m, db, purpleairHosts, now, verbose)
 	}
 	if weatherClient != nil {
 		captureWeather(db, weatherClient, verbose)
 	}
 }
 
-func captureSensibo(csvLog *logger.CSVLogger, m *metrics.Metrics, db *store.Store, apiKey string, now time.Time, verbose bool) {
+func captureSensibo(m *metrics.Metrics, db *store.Store, apiKey string, now time.Time, verbose bool) {
 	client := sensibo.NewClient(apiKey)
 	devices, err := client.GetDevices()
 	if err != nil {
@@ -200,13 +172,8 @@ func captureSensibo(csvLog *logger.CSVLogger, m *metrics.Metrics, db *store.Stor
 			rec.Humidity = h
 			rec.DewPointC = calc.DewPoint(latest.Value, h)
 		}
-		if err := csvLog.Log(rec); err != nil {
-			log.Printf("Log write error: %v", err)
-		}
-		if db != nil {
-			if err := db.InsertReading(context.Background(), rec); err != nil {
-				log.Printf("DB write error: %v", err)
-			}
+		if err := db.InsertReading(context.Background(), rec); err != nil {
+			log.Printf("DB write error: %v", err)
 		}
 		m.Update(rec)
 		if verbose {
@@ -217,7 +184,7 @@ func captureSensibo(csvLog *logger.CSVLogger, m *metrics.Metrics, db *store.Stor
 	}
 }
 
-func capturePurpleAir(csvLog *logger.CSVLogger, m *metrics.Metrics, db *store.Store, hosts []string, now time.Time, verbose bool) {
+func capturePurpleAir(m *metrics.Metrics, db *store.Store, hosts []string, now time.Time, verbose bool) {
 	client := purpleair.NewClient(hosts)
 	for _, host := range hosts {
 		reading, err := client.Fetch(host)
@@ -241,13 +208,8 @@ func capturePurpleAir(csvLog *logger.CSVLogger, m *metrics.Metrics, db *store.St
 			AQI:       s.AQI,
 			VOC:       s.Gas680,
 		}
-		if err := csvLog.Log(rec); err != nil {
-			log.Printf("Log write error: %v", err)
-		}
-		if db != nil {
-			if err := db.InsertReading(context.Background(), rec); err != nil {
-				log.Printf("DB write error: %v", err)
-			}
+		if err := db.InsertReading(context.Background(), rec); err != nil {
+			log.Printf("DB write error: %v", err)
 		}
 		m.Update(rec)
 		if verbose {
@@ -258,7 +220,7 @@ func capturePurpleAir(csvLog *logger.CSVLogger, m *metrics.Metrics, db *store.St
 	}
 }
 
-func captureACStates(acLog *logger.ACStateCSVLogger, existingIDs map[string]bool, db *store.Store, apiKey string, verbose bool) {
+func captureACStates(db *store.Store, apiKey string, verbose bool) {
 	client := sensibo.NewClient(apiKey)
 	devices, err := client.GetDevices()
 	if err != nil {
@@ -271,11 +233,7 @@ func captureACStates(acLog *logger.ACStateCSVLogger, existingIDs map[string]bool
 			log.Printf("Sensibo AC states %s (%s): %v", dev.Room.Name, dev.ID, err)
 			continue
 		}
-		newCount := 0
 		for _, sc := range states {
-			if existingIDs[sc.ID] {
-				continue
-			}
 			rec := logger.ACStateRecord{
 				Timestamp:         sc.Time.Time,
 				DeviceID:          dev.ID,
@@ -291,17 +249,9 @@ func captureACStates(acLog *logger.ACStateCSVLogger, existingIDs map[string]bool
 				Reason:            sc.Reason,
 				SensiboID:         sc.ID,
 			}
-			if err := acLog.Log(rec); err != nil {
-				log.Printf("AC state log write error: %v", err)
-				continue
+			if err := db.InsertACState(context.Background(), rec); err != nil {
+				log.Printf("DB AC state write error: %v", err)
 			}
-			if db != nil {
-				if err := db.InsertACState(context.Background(), rec); err != nil {
-					log.Printf("DB AC state write error: %v", err)
-				}
-			}
-			existingIDs[sc.ID] = true
-			newCount++
 			if verbose {
 				log.Printf("  AC state: %s (%s) on=%v mode=%s temp=%d%s fan=%s reason=%s [%s]",
 					dev.Room.Name, dev.ID, sc.ACState.On, sc.ACState.Mode,
@@ -309,9 +259,6 @@ func captureACStates(acLog *logger.ACStateCSVLogger, existingIDs map[string]bool
 					sc.ACState.FanLevel, sc.Reason,
 					strings.Join(sc.ChangedProperties, ","))
 			}
-		}
-		if newCount > 0 {
-			log.Printf("  AC states: %s — %d new state change(s) recorded", dev.Room.Name, newCount)
 		}
 	}
 }
@@ -342,10 +289,8 @@ func captureWeather(db *store.Store, client *openmeteo.Client, verbose bool) {
 		log.Printf("Weather error: %v", err)
 		return
 	}
-	if db != nil {
-		if err := db.InsertWeather(context.Background(), reading); err != nil {
-			log.Printf("DB weather write error: %v", err)
-		}
+	if err := db.InsertWeather(context.Background(), reading); err != nil {
+		log.Printf("DB weather write error: %v", err)
 	}
 	if verbose {
 		log.Printf("  weather (%.4f,%.4f): %.1f°C, %.0f%%, dew point %.1f°C, pressure %.1f hPa, wind %.1f km/h, UV %.1f, precip %.1f mm",

@@ -152,6 +152,117 @@ func (s *Store) QueryWeather(ctx context.Context, from, to time.Time) ([]openmet
 	return result, rows.Err()
 }
 
+// QueryReadings returns sensor readings between from (inclusive) and to (exclusive),
+// ordered ascending. Returns an empty slice (not an error) when the table is empty.
+func (s *Store) QueryReadings(ctx context.Context, from, to time.Time) ([]logger.Record, error) {
+	rows, err := s.pool.Query(ctx, `
+		SELECT timestamp, source, sensor_id, location,
+		       temp_c, humidity, dewpoint_c,
+		       pressure, pm1, pm25, pm10, aqi, voc
+		FROM readings
+		WHERE timestamp >= $1 AND timestamp < $2
+		ORDER BY timestamp ASC`,
+		from, to,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("query readings: %w", err)
+	}
+	defer rows.Close()
+
+	var result []logger.Record
+	for rows.Next() {
+		var r logger.Record
+		var pressure, pm1, pm25, pm10, aqi, voc *float64
+		if err := rows.Scan(
+			&r.Timestamp, &r.Source, &r.SensorID, &r.Location,
+			&r.TempC, &r.Humidity, &r.DewPointC,
+			&pressure, &pm1, &pm25, &pm10, &aqi, &voc,
+		); err != nil {
+			return nil, fmt.Errorf("scan reading row: %w", err)
+		}
+		if pressure != nil {
+			r.Pressure = *pressure
+		}
+		if pm1 != nil {
+			r.PM1 = *pm1
+		}
+		if pm25 != nil {
+			r.PM25 = *pm25
+		}
+		if pm10 != nil {
+			r.PM10 = *pm10
+		}
+		if aqi != nil {
+			r.AQI = *aqi
+		}
+		if voc != nil {
+			r.VOC = *voc
+		}
+		result = append(result, r)
+	}
+	return result, rows.Err()
+}
+
+// QueryACStates returns AC state changes between from (inclusive) and to (exclusive),
+// ordered ascending. Returns an empty slice (not an error) when the table is empty.
+func (s *Store) QueryACStates(ctx context.Context, from, to time.Time) ([]logger.ACStateRecord, error) {
+	rows, err := s.pool.Query(ctx, `
+		SELECT timestamp, device_id, room_name, ac_on,
+		       mode, target_temp, temp_unit, fan_level,
+		       swing, horizontal_swing, changed_properties, reason, sensibo_id
+		FROM ac_states
+		WHERE timestamp >= $1 AND timestamp < $2
+		ORDER BY timestamp ASC`,
+		from, to,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("query ac states: %w", err)
+	}
+	defer rows.Close()
+
+	var result []logger.ACStateRecord
+	for rows.Next() {
+		var r logger.ACStateRecord
+		var ts time.Time
+		var mode, tempUnit, fanLevel, swing, hSwing, changedProps, reason *string
+		var targetTemp *int
+		if err := rows.Scan(
+			&ts, &r.DeviceID, &r.RoomName, &r.On,
+			&mode, &targetTemp, &tempUnit, &fanLevel,
+			&swing, &hSwing, &changedProps, &reason, &r.SensiboID,
+		); err != nil {
+			return nil, fmt.Errorf("scan ac state row: %w", err)
+		}
+		r.Timestamp = ts.UTC().Format(time.RFC3339)
+		if mode != nil {
+			r.Mode = *mode
+		}
+		if targetTemp != nil {
+			r.TargetTemp = *targetTemp
+		}
+		if tempUnit != nil {
+			r.TempUnit = *tempUnit
+		}
+		if fanLevel != nil {
+			r.FanLevel = *fanLevel
+		}
+		if swing != nil {
+			r.Swing = *swing
+		}
+		if hSwing != nil {
+			r.HorizontalSwing = *hSwing
+		}
+		if changedProps != nil {
+			r.ChangedProperties = *changedProps
+		}
+		if reason != nil {
+			r.Reason = *reason
+		}
+		result = append(result, r)
+	}
+	return result, rows.Err()
+}
+
 // BatchInsertReadings inserts multiple readings in a single round-trip.
 func (s *Store) BatchInsertReadings(ctx context.Context, records []logger.Record) error {
 	if len(records) == 0 {

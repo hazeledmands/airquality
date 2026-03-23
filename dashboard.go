@@ -1,17 +1,14 @@
 package main
 
 import (
-	"encoding/csv"
 	"encoding/json"
-	"errors"
 	"log"
 	"net/http"
-	"os"
-	"strconv"
 	"time"
 
 	_ "embed"
 
+	"github.com/hazel/airquality/logger"
 	"github.com/hazel/airquality/openmeteo"
 	"github.com/hazel/airquality/store"
 )
@@ -73,8 +70,8 @@ func weatherReadings(rows []openmeteo.Reading) []weatherReading {
 
 type sensorData struct {
 	Source   string    `json:"source"`
-	SensorID string   `json:"sensor_id"`
-	Location string   `json:"location"`
+	SensorID string    `json:"sensor_id"`
+	Location string    `json:"location"`
 	Readings []reading `json:"readings"`
 }
 
@@ -98,194 +95,111 @@ type acStateData struct {
 }
 
 type acStateChange struct {
-	Timestamp string `json:"timestamp"`
-	On        bool   `json:"on"`
-	Mode      string `json:"mode"`
-	TargetTemp int   `json:"target_temp"`
-	TempUnit  string `json:"temp_unit"`
-	FanLevel  string `json:"fan_level"`
-	Reason    string `json:"reason"`
+	Timestamp  string `json:"timestamp"`
+	On         bool   `json:"on"`
+	Mode       string `json:"mode"`
+	TargetTemp int    `json:"target_temp"`
+	TempUnit   string `json:"temp_unit"`
+	FanLevel   string `json:"fan_level"`
+	Reason     string `json:"reason"`
 }
 
-func parseCSVData(path string, acPath string) (*dashboardData, error) {
-	data, err := parseSensorCSVData(path)
-	if err != nil {
-		return nil, err
-	}
-
-	acStates, err := parseACStateCSVData(acPath)
-	if err != nil {
-		return nil, err
-	}
-	data.ACStates = acStates
-	return data, nil
-}
-
-func parseSensorCSVData(path string) (*dashboardData, error) {
-	f, err := os.Open(path)
-	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return &dashboardData{}, nil
-		}
-		return nil, err
-	}
-	defer f.Close()
-
-	r := csv.NewReader(f)
-	records, err := r.ReadAll()
-	if err != nil {
-		return nil, err
-	}
-
-	if len(records) < 2 {
-		return &dashboardData{}, nil
-	}
-
+func groupReadings(records []logger.Record) []sensorData {
 	sensorMap := make(map[string]*sensorData)
 	var order []string
-
-	for _, row := range records[1:] {
-		if len(row) < 13 {
-			continue
-		}
-		key := row[1] + "/" + row[2]
+	for _, r := range records {
+		key := r.Source + "/" + r.SensorID
 		sensor, exists := sensorMap[key]
 		if !exists {
 			sensor = &sensorData{
-				Source:   row[1],
-				SensorID: row[2],
-				Location: row[3],
+				Source:   r.Source,
+				SensorID: r.SensorID,
+				Location: r.Location,
 			}
 			sensorMap[key] = sensor
 			order = append(order, key)
 		}
 		sensor.Readings = append(sensor.Readings, reading{
-			Timestamp: row[0],
-			TempC:     parseCSVFloat(row[4]),
-			Humidity:  parseCSVFloat(row[5]),
-			DewPointC: parseCSVFloat(row[6]),
-			Pressure:  parseCSVFloat(row[7]),
-			PM1:       parseCSVFloat(row[8]),
-			PM25:      parseCSVFloat(row[9]),
-			PM10:      parseCSVFloat(row[10]),
-			AQI:       parseCSVFloat(row[11]),
-			VOC:       parseCSVFloat(row[12]),
+			Timestamp: r.Timestamp.UTC().Format(time.RFC3339),
+			TempC:     r.TempC,
+			Humidity:  r.Humidity,
+			DewPointC: r.DewPointC,
+			Pressure:  r.Pressure,
+			PM1:       r.PM1,
+			PM25:      r.PM25,
+			PM10:      r.PM10,
+			AQI:       r.AQI,
+			VOC:       r.VOC,
 		})
 	}
-
-	data := &dashboardData{}
+	result := make([]sensorData, 0, len(order))
 	for _, key := range order {
-		data.Sensors = append(data.Sensors, *sensorMap[key])
+		result = append(result, *sensorMap[key])
 	}
-	return data, nil
+	return result
 }
 
-func parseACStateCSVData(path string) ([]acStateData, error) {
-	f, err := os.Open(path)
-	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return nil, nil
-		}
-		return nil, err
-	}
-	defer f.Close()
-
-	r := csv.NewReader(f)
-	records, err := r.ReadAll()
-	if err != nil {
-		return nil, err
-	}
-
-	if len(records) < 2 {
-		return nil, nil
-	}
-
+func groupACStates(records []logger.ACStateRecord) []acStateData {
 	stateMap := make(map[string]*acStateData)
 	var order []string
-
-	for _, row := range records[1:] {
-		if len(row) < 13 {
-			continue
-		}
-		key := row[1]
-		state, exists := stateMap[key]
+	for _, r := range records {
+		state, exists := stateMap[r.DeviceID]
 		if !exists {
 			state = &acStateData{
-				DeviceID: row[1],
-				Room:     row[2],
+				DeviceID: r.DeviceID,
+				Room:     r.RoomName,
 			}
-			stateMap[key] = state
-			order = append(order, key)
+			stateMap[r.DeviceID] = state
+			order = append(order, r.DeviceID)
 		}
 		state.Changes = append(state.Changes, acStateChange{
-			Timestamp:  row[0],
-			On:         parseCSVBool(row[3]),
-			Mode:       row[4],
-			TargetTemp: parseCSVInt(row[5]),
-			TempUnit:   row[6],
-			FanLevel:   row[7],
-			Reason:     row[11],
+			Timestamp:  r.Timestamp,
+			On:         r.On,
+			Mode:       r.Mode,
+			TargetTemp: r.TargetTemp,
+			TempUnit:   r.TempUnit,
+			FanLevel:   r.FanLevel,
+			Reason:     r.Reason,
 		})
 	}
-
-	var states []acStateData
+	result := make([]acStateData, 0, len(order))
 	for _, key := range order {
-		states = append(states, *stateMap[key])
+		result = append(result, *stateMap[key])
 	}
-	return states, nil
+	return result
 }
 
-func parseCSVFloat(s string) float64 {
-	if s == "" {
-		return 0
-	}
-	v, _ := strconv.ParseFloat(s, 64)
-	return v
-}
-
-func parseCSVInt(s string) int {
-	if s == "" {
-		return 0
-	}
-	v, _ := strconv.Atoi(s)
-	return v
-}
-
-func parseCSVBool(s string) bool {
-	v, _ := strconv.ParseBool(s)
-	return v
-}
-
-func dataHandler(csvPath string, acPath string, db *store.Store) http.HandlerFunc {
+func dataHandler(db *store.Store) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		data, err := parseCSVData(csvPath, acPath)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
+		to := time.Now().UTC()
+		from := to.AddDate(0, 0, -30)
+
+		data := &dashboardData{
+			Sensors:  []sensorData{},
+			ACStates: []acStateData{},
+			Weather:  []weatherReading{},
 		}
 
-		data.Weather = []weatherReading{}
-		if db != nil && len(data.Sensors) > 0 {
-			// Find oldest sensor reading to set the weather query window.
-			var minT time.Time
-			for _, s := range data.Sensors {
-				for _, rd := range s.Readings {
-					t, err := time.Parse(time.RFC3339, rd.Timestamp)
-					if err != nil {
-						continue
-					}
-					if minT.IsZero() || t.Before(minT) {
-						minT = t
-					}
-				}
+		if db != nil {
+			readings, err := db.QueryReadings(r.Context(), from, to)
+			if err != nil {
+				log.Printf("Warning: readings query: %v", err)
+			} else {
+				data.Sensors = groupReadings(readings)
 			}
-			if !minT.IsZero() {
-				rows, err := db.QueryWeather(r.Context(), minT, time.Now().UTC())
-				if err != nil {
-					log.Printf("Warning: weather query: %v", err)
-				} else {
-					data.Weather = weatherReadings(rows)
-				}
+
+			acRecords, err := db.QueryACStates(r.Context(), from, to)
+			if err != nil {
+				log.Printf("Warning: ac states query: %v", err)
+			} else {
+				data.ACStates = groupACStates(acRecords)
+			}
+
+			weatherRows, err := db.QueryWeather(r.Context(), from, to)
+			if err != nil {
+				log.Printf("Warning: weather query: %v", err)
+			} else {
+				data.Weather = weatherReadings(weatherRows)
 			}
 		}
 
