@@ -163,6 +163,23 @@ describe('computeYRange', () => {
         expect(range.min).toBe(73);
         expect(range.max).toBe(73);
     });
+
+    it('expands the range by the given padding fraction on each side', () => {
+        // span = 80 - 60 = 20; 5% padding = 1 on each side
+        const charts = [{ data: { datasets: [
+            { yAxisID: 'y', data: [{ x: 1, y: 60 }, { x: 2, y: 80 }] },
+        ] } }];
+        const range = computeYRange(charts, 'y', 0.05);
+        expect(range.min).toBeCloseTo(59);
+        expect(range.max).toBeCloseTo(81);
+    });
+
+    it('uses a span of 1 when all values are equal, to avoid zero padding', () => {
+        const charts = [{ data: { datasets: [{ yAxisID: 'y', data: [{ x: 1, y: 73 }] }] } }];
+        const range = computeYRange(charts, 'y', 0.05);
+        expect(range.min).toBeCloseTo(72.95);
+        expect(range.max).toBeCloseTo(73.05);
+    });
 });
 
 describe('syncYAxes', () => {

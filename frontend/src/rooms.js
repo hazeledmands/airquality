@@ -397,8 +397,8 @@ function updateCharts(data) {
     // Align all axes to the same ranges, then update
     const allCharts = roomCharts.map(rc => rc.chart);
     syncXAxes(allCharts, computeXRange(allCharts));
-    syncYAxes(allCharts, 'y',  computeYRange(allCharts, 'y'));
-    syncYAxes(allCharts, 'y2', computeYRange(allCharts, 'y2'));
+    syncYAxes(allCharts, 'y',  computeYRange(allCharts, 'y',  0.05));
+    syncYAxes(allCharts, 'y2', computeYRange(allCharts, 'y2', 0.05));
     for (const rc of roomCharts) rc.chart.update();
 
     setAnnotations(data.annotations || []);

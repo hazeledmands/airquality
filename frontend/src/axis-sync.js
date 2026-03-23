@@ -26,7 +26,7 @@ export function syncXAxes(charts, range) {
 
 // Returns the global y-axis range {min, max} for all datasets assigned to the
 // given axisId across every chart. Returns null when there is no matching data.
-export function computeYRange(charts, axisId) {
+export function computeYRange(charts, axisId, padding = 0) {
     let min = Infinity;
     let max = -Infinity;
     for (const chart of charts) {
@@ -40,7 +40,9 @@ export function computeYRange(charts, axisId) {
             }
         }
     }
-    return min <= max ? { min, max } : null;
+    if (min > max) return null;
+    const span = max - min || 1;
+    return { min: min - span * padding, max: max + span * padding };
 }
 
 // Applies the same min and max to every chart's named y-axis so they are
