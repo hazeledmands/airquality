@@ -228,10 +228,9 @@ describe('maximaLabelsPlugin', () => {
         expect(calls[0][0]).toBe('78.8');
     });
 
-    it('clamps label y to stay inside the chart area when peak is near the top', () => {
+    it('draws label below the peak when peak is near the top of the chart area', () => {
         // Peak data value maps to py=2 (nearly at chartArea.top=0).
-        // Label would naively be at py-6 = -4, which is above the chart area.
-        // It should be clamped to top+12 instead.
+        // Label above would be at py-6 = -4 (off-chart). Should flip to below: py+6 = 8.
         const ds = {
             data: [{ y: 98 }, { y: 99 }, { y: 97 }],
             borderColor: '#ff0000',
@@ -243,8 +242,11 @@ describe('maximaLabelsPlugin', () => {
 
         const calls = chart.ctx.fillText.mock.calls;
         expect(calls.length).toBe(1);
+        const peakPy = 200 - 99 * 2; // = 2
         const labelY = calls[0][2];
-        expect(labelY).toBeGreaterThanOrEqual(chart.chartArea.top + 12);
+        // Label should be placed 6px below the peak (not clamped above it),
+        // so the text body doesn't overlap the data line.
+        expect(labelY).toBe(peakPy + 6);
     });
 
     it('suppresses lesser peak when dominated by nearby higher value', () => {

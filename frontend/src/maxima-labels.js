@@ -73,13 +73,18 @@ export const maximaLabelsPlugin = {
             ctx.save();
             ctx.font = 'bold 10px system-ui, sans-serif';
             ctx.textAlign = 'center';
-            ctx.textBaseline = 'bottom';
             ctx.fillStyle = color;
 
             for (const m of maxima) {
                 const num = Number.isInteger(m.value) ? String(m.value) : m.value.toFixed(1);
-                const labelY = Math.max(m.y - 6, top + 12);
-                ctx.fillText(num + unit, m.x, labelY);
+                if (m.y - 6 < top + 12) {
+                    // Too close to the top edge — flip label below the peak
+                    ctx.textBaseline = 'top';
+                    ctx.fillText(num + unit, m.x, m.y + 6);
+                } else {
+                    ctx.textBaseline = 'bottom';
+                    ctx.fillText(num + unit, m.x, m.y - 6);
+                }
             }
             ctx.restore();
         }
