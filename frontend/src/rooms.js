@@ -1,4 +1,4 @@
-import { REFRESH_MS, cToF, filterByRange, buildRoomDatasets, computeStatus, getAspectRatio, makeWeatherTempSeries, makeUVSeries, extractDaylightPairs } from './data.js';
+import { REFRESH_MS, cToF, filterByRange, buildRoomDatasets, computeStatus, getAspectRatio, makeWeatherTempSeries, makeUVSeries, extractDaylightPairs, applyNewAnnotation, removeAnnotation } from './data.js';
 import { xTickCallback } from './charts.js';
 import { crosshairPlugin, registerChart, unregisterChart } from './crosshair.js';
 import { maximaLabelsPlugin, setMaximaLabelsEnabled } from './maxima-labels.js';
@@ -422,11 +422,19 @@ const { applyFilter, setRangeDefaults } = setupDateRange({
 
 async function saveAnnotation(timestamp, note) {
     try {
-        await fetch('/api/annotations', {
+        const resp = await fetch('/api/annotations', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ timestamp, note }),
         });
+        if (resp.ok && allData) {
+            // Immediately reflect in the UI so the user sees the marker right away.
+            const newAnnotation = await resp.json();
+            allData = applyNewAnnotation(allData, newAnnotation);
+            const from = document.getElementById('rangeFrom').value;
+            const to = document.getElementById('rangeTo').value;
+            updateCharts(filterByRange(allData, from, to));
+        }
         fetchData();
     } catch (err) {
         console.error('Failed to save annotation:', err);
@@ -435,7 +443,14 @@ async function saveAnnotation(timestamp, note) {
 
 async function deleteAnnotation(id) {
     try {
-        await fetch(`/api/annotations/${id}`, { method: 'DELETE' });
+        const resp = await fetch(`/api/annotations/${id}`, { method: 'DELETE' });
+        if (resp.ok && allData) {
+            // Immediately remove from the UI.
+            allData = removeAnnotation(allData, id);
+            const from = document.getElementById('rangeFrom').value;
+            const to = document.getElementById('rangeTo').value;
+            updateCharts(filterByRange(allData, from, to));
+        }
         fetchData();
     } catch (err) {
         console.error('Failed to delete annotation:', err);

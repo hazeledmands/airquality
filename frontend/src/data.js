@@ -178,6 +178,16 @@ export function makeUVSeries(weather) {
     };
 }
 
+// Returns a new data object with `annotation` appended to the annotations list.
+export function applyNewAnnotation(data, annotation) {
+    return { ...data, annotations: [...(data.annotations || []), annotation] };
+}
+
+// Returns a new data object with the annotation matching `id` removed.
+export function removeAnnotation(data, id) {
+    return { ...data, annotations: (data.annotations || []).filter(a => a.id !== id) };
+}
+
 export function extractDaylightPairs(weather) {
     const seen = new Set();
     const pairs = [];

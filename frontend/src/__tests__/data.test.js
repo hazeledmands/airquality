@@ -12,6 +12,8 @@ import {
     computeStatus,
     getDataRange,
     getAspectRatio,
+    applyNewAnnotation,
+    removeAnnotation,
 } from '../data.js';
 
 describe('cToF', () => {
@@ -452,5 +454,76 @@ describe('buildRoomDatasets', () => {
         const rooms = buildRoomDatasets(sensors, acStates);
         const office = rooms.find(r => r.name === 'Office');
         expect(office.temp[0].data[0].y).toBeCloseTo(cToF(22));
+    });
+});
+
+const A1 = { id: 1, timestamp: '2026-03-01T12:00:00Z', note: 'opened window' };
+const A2 = { id: 2, timestamp: '2026-03-01T13:00:00Z', note: 'closed window' };
+
+describe('applyNewAnnotation', () => {
+    it('appends a new annotation to existing list', () => {
+        const data = { annotations: [A1] };
+        const result = applyNewAnnotation(data, A2);
+        expect(result.annotations).toEqual([A1, A2]);
+    });
+
+    it('works when annotations array is empty', () => {
+        const data = { annotations: [] };
+        const result = applyNewAnnotation(data, A1);
+        expect(result.annotations).toEqual([A1]);
+    });
+
+    it('works when annotations key is absent', () => {
+        const result = applyNewAnnotation({}, A1);
+        expect(result.annotations).toEqual([A1]);
+    });
+
+    it('does not mutate the original data object', () => {
+        const data = { annotations: [A1] };
+        applyNewAnnotation(data, A2);
+        expect(data.annotations).toEqual([A1]);
+    });
+
+    it('preserves other data keys', () => {
+        const data = { sensors: ['s'], annotations: [] };
+        const result = applyNewAnnotation(data, A1);
+        expect(result.sensors).toEqual(['s']);
+    });
+});
+
+describe('removeAnnotation', () => {
+    it('removes the annotation with the given id', () => {
+        const data = { annotations: [A1, A2] };
+        const result = removeAnnotation(data, A1.id);
+        expect(result.annotations).toEqual([A2]);
+    });
+
+    it('returns empty array when last annotation is removed', () => {
+        const data = { annotations: [A1] };
+        const result = removeAnnotation(data, A1.id);
+        expect(result.annotations).toEqual([]);
+    });
+
+    it('leaves list unchanged when id is not found', () => {
+        const data = { annotations: [A1, A2] };
+        const result = removeAnnotation(data, 999);
+        expect(result.annotations).toEqual([A1, A2]);
+    });
+
+    it('works when annotations key is absent', () => {
+        const result = removeAnnotation({}, 1);
+        expect(result.annotations).toEqual([]);
+    });
+
+    it('does not mutate the original data object', () => {
+        const data = { annotations: [A1, A2] };
+        removeAnnotation(data, A1.id);
+        expect(data.annotations).toEqual([A1, A2]);
+    });
+
+    it('preserves other data keys', () => {
+        const data = { sensors: ['s'], annotations: [A1] };
+        const result = removeAnnotation(data, A1.id);
+        expect(result.sensors).toEqual(['s']);
     });
 });
