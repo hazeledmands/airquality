@@ -1,9 +1,10 @@
 import { REFRESH_MS, cToF, filterByRange, buildRoomDatasets, computeStatus, getAspectRatio, makeWeatherTempSeries, makeUVSeries, extractDaylightPairs, applyNewAnnotation, removeAnnotation } from './data.js';
+import { CHART_ANIMATION_MS, Y_AXIS_PADDING } from './config.js';
 import { xTickCallback } from './charts.js';
 import { crosshairPlugin, registerChart, unregisterChart } from './crosshair.js';
 import { maximaLabelsPlugin, setMaximaLabelsEnabled } from './maxima-labels.js';
 import { humidityHighlightPlugin, setHumidityHighlightEnabled } from './humidity-highlight.js';
-import { daylightPlugin, setDaylightEnabled, setDaylightPairs } from './daylight-plugin.js';
+import { daylightPlugin, setDaylightPairs } from './daylight-plugin.js';
 import { setupDateRange } from './daterange.js';
 import { createDragHandle } from './chart-card.js';
 import { setupReorder } from './reorder.js';
@@ -43,7 +44,7 @@ function combinedChartOpts(ar, room) {
         responsive: true,
         maintainAspectRatio: true,
         aspectRatio: ar,
-        animation: { duration: 300 },
+        animation: { duration: CHART_ANIMATION_MS },
         interaction: { mode: 'index', intersect: false },
         scales: {
             x: {
@@ -180,7 +181,7 @@ function weatherChartOpts(ar) {
         responsive: true,
         maintainAspectRatio: true,
         aspectRatio: ar,
-        animation: { duration: 300 },
+        animation: { duration: CHART_ANIMATION_MS },
         interaction: { mode: 'index', intersect: false },
         scales: {
             x: {
@@ -397,8 +398,8 @@ function updateCharts(data) {
     // Align all axes to the same ranges, then update
     const allCharts = roomCharts.map(rc => rc.chart);
     syncXAxes(allCharts, computeXRange(allCharts));
-    syncYAxes(allCharts, 'y',  computeYRange(allCharts, 'y',  0.05));
-    syncYAxes(allCharts, 'y2', computeYRange(allCharts, 'y2', 0.05));
+    syncYAxes(allCharts, 'y',  computeYRange(allCharts, 'y',  Y_AXIS_PADDING));
+    syncYAxes(allCharts, 'y2', computeYRange(allCharts, 'y2', Y_AXIS_PADDING));
     for (const rc of roomCharts) rc.chart.update();
 
     setAnnotations(data.annotations || []);
@@ -415,7 +416,7 @@ window.addEventListener('resize', () => {
     }
 });
 
-const { applyFilter, setRangeDefaults } = setupDateRange({
+const { setRangeDefaults } = setupDateRange({
     getDataFn: () => allData,
     onFilter: (from, to) => {
         if (allData) updateCharts(filterByRange(allData, from, to));

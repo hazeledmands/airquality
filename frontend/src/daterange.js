@@ -1,4 +1,5 @@
 import { toLocalInput, getDataRange } from './data.js';
+import { DEFAULT_DATE_RANGE_MS } from './config.js';
 
 const DATE_PARAMS = new Set(['from', 'to', 'preset']);
 
@@ -76,7 +77,7 @@ export function setupDateRange({ getDataFn, onFilter }) {
         return true;
     }
 
-    const DEFAULT_PRESET_MS = 259200000; // 3 days
+    const DEFAULT_PRESET_MS = DEFAULT_DATE_RANGE_MS;
 
     // Restore state from URL on load, or apply default preset
     function restoreFromURL() {

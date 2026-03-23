@@ -1,3 +1,5 @@
+import { CHART_ANIMATION_MS } from './config.js';
+
 export function xTickCallback(value, index, ticks) {
     const dt = luxon.DateTime.fromMillis(ticks[index].value);
     const time = dt.toFormat('h:mm a');
@@ -13,7 +15,7 @@ export function chartOpts(aspectRatio) {
         responsive: true,
         maintainAspectRatio: true,
         aspectRatio,
-        animation: { duration: 300 },
+        animation: { duration: CHART_ANIMATION_MS },
         interaction: { mode: 'index', intersect: false },
         scales: {
             x: {

@@ -1,4 +1,4 @@
-const MIN_PX_DIST = 200; // minimum horizontal pixel distance between labels
+import { PEAK_MIN_PX_DIST } from './config.js';
 
 let enabled = true;
 
@@ -30,7 +30,7 @@ export const maximaLabelsPlugin = {
             if (!points || points.length < 3) continue;
 
             // Find dominant peaks: local maxima that aren't dominated by any
-            // higher value within MIN_PX_DIST pixels. This naturally enforces
+            // higher value within PEAK_MIN_PX_DIST pixels. This naturally enforces
             // spacing and picks the true peak of each hill.
             const maxima = [];
             for (let i = 1; i < points.length - 1; i++) {
@@ -46,17 +46,17 @@ export const maximaLabelsPlugin = {
                 const py = points[i].y;
                 if (px < left || px > right || py < top || py > bottom) continue;
 
-                // Check if any point within MIN_PX_DIST has a higher value.
+                // Check if any point within PEAK_MIN_PX_DIST has a higher value.
                 // For equal values, the earlier (leftmost) point wins.
                 let dominated = false;
                 for (let j = i - 1; j >= 0 && !dominated; j--) {
-                    if (points[j].x < px - MIN_PX_DIST) break;
+                    if (points[j].x < px - PEAK_MIN_PX_DIST) break;
                     const val = dataset.data[j]?.y;
                     if (val != null && val >= curr) dominated = true;
                 }
                 if (!dominated) {
                     for (let j = i + 1; j < points.length && !dominated; j++) {
-                        if (points[j].x > px + MIN_PX_DIST) break;
+                        if (points[j].x > px + PEAK_MIN_PX_DIST) break;
                         const val = dataset.data[j]?.y;
                         if (val != null && val > curr) dominated = true;
                     }

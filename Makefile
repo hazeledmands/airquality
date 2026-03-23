@@ -11,6 +11,7 @@ frontend/node_modules: frontend/package.json
 	@touch $@
 
 test: frontend/node_modules
+	npm --prefix frontend run lint
 	npm --prefix frontend test
 	go test ./...
 

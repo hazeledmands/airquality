@@ -32,8 +32,6 @@ function makeChart(xPixels = { left: 0, right: 1200 }) {
 // ms 0       -> x 0
 // ms 600000  -> x 600
 // ms 1200000 -> x 1200
-const DAY_START = 0;
-const DAY_END = 1200000;
 const SUNRISE = 300000;  // x = 300
 const SUNSET  = 900000;  // x = 900
 

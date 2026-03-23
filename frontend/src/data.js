@@ -72,21 +72,6 @@ export function toLocalInput(d) {
     return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
-export function buildDatasets(sensors, acStates = []) {
-    const tempDS = [], humDS = [], dewDS = [], pmDS = [], acStateDS = [];
-    sensors.forEach((s, i) => {
-        tempDS.push(makeSeries(s, 'temp_c', i, cToF));
-        humDS.push(makeSeries(s, 'humidity', i));
-        dewDS.push(makeSeries(s, 'dewpoint_c', i, cToF));
-        if (s.source === 'purpleair' || s.readings.some(r => r.pm25 > 0)) {
-            pmDS.push(makeSeries(s, 'pm25', i));
-        }
-    });
-    acStates.forEach((state, i) => {
-        acStateDS.push(makeACStateSeries(state, i));
-    });
-    return { temp: tempDS, humidity: humDS, dewpoint: dewDS, pm: pmDS, acState: acStateDS };
-}
 
 export function buildRoomDatasets(sensors, acStates = []) {
     const roomMap = new Map();

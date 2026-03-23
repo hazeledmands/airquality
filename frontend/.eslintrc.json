@@ -1,0 +1,19 @@
+{
+  "parserOptions": {
+    "ecmaVersion": 2022,
+    "sourceType": "module"
+  },
+  "env": {
+    "browser": true,
+    "es2022": true
+  },
+  "globals": {
+    "Chart": "readonly",
+    "luxon": "readonly"
+  },
+  "rules": {
+    "no-unused-vars": ["error", { "argsIgnorePattern": "^_", "varsIgnorePattern": "^_" }],
+    "no-undef": "error"
+  },
+  "ignorePatterns": ["dist/", "dist-rooms/", "node_modules/"]
+}

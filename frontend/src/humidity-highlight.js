@@ -1,4 +1,4 @@
-const DEFAULT_THRESHOLD = 60;
+import { HUMIDITY_THRESHOLD } from './config.js';
 
 let globalEnabled = true;
 
@@ -18,7 +18,7 @@ export const humidityHighlightPlugin = {
         const opts = chart.options.plugins?.humidityHighlight;
         if (!opts?.enabled) return;
 
-        const threshold = opts.threshold || DEFAULT_THRESHOLD;
+        const threshold = opts.threshold || HUMIDITY_THRESHOLD;
 
         // Find the humidity dataset
         let humIdx = -1;

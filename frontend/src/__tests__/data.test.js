@@ -7,7 +7,6 @@ import {
     makeSeries,
     filterByRange,
     toLocalInput,
-    buildDatasets,
     buildRoomDatasets,
     computeStatus,
     getDataRange,
@@ -194,98 +193,6 @@ describe('toLocalInput', () => {
     });
 });
 
-describe('buildDatasets', () => {
-    const sensors = [
-        {
-            source: 'sensibo',
-            sensor_id: 'a',
-            location: 'Office',
-            readings: [
-                { timestamp: '2026-03-17T10:00:00Z', temp_c: 22, humidity: 45, dewpoint_c: 10, pm25: 0 },
-            ],
-        },
-        {
-            source: 'purpleair',
-            sensor_id: 'b',
-            location: 'Outside',
-            readings: [
-                { timestamp: '2026-03-17T10:00:00Z', temp_c: 18, humidity: 60, dewpoint_c: 8, pm25: 12.5 },
-            ],
-        },
-    ];
-    const acStates = [
-        {
-            device_id: 'a',
-            room: 'Office',
-            changes: [
-                { timestamp: '2026-03-17T10:00:00Z', on: true, mode: 'cool' },
-                { timestamp: '2026-03-17T11:00:00Z', on: false, mode: 'cool' },
-            ],
-        },
-    ];
-
-    it('returns temp, humidity, dewpoint, and pm dataset arrays', () => {
-        const ds = buildDatasets(sensors, acStates);
-        expect(ds).toHaveProperty('temp');
-        expect(ds).toHaveProperty('humidity');
-        expect(ds).toHaveProperty('dewpoint');
-        expect(ds).toHaveProperty('pm');
-        expect(ds).toHaveProperty('acState');
-    });
-
-    it('creates one temp dataset per sensor', () => {
-        const ds = buildDatasets(sensors, acStates);
-        expect(ds.temp).toHaveLength(2);
-    });
-
-    it('converts temperature to Fahrenheit', () => {
-        const ds = buildDatasets(sensors, acStates);
-        expect(ds.temp[0].data[0].y).toBeCloseTo(cToF(22));
-    });
-
-    it('includes PM dataset for purpleair sensors', () => {
-        const ds = buildDatasets(sensors, acStates);
-        expect(ds.pm).toHaveLength(1);
-        expect(ds.pm[0].label).toBe('Outside');
-    });
-
-    it('includes PM dataset for sensors with non-zero pm25', () => {
-        const sensorsWithPm = [
-            {
-                source: 'sensibo',
-                sensor_id: 'x',
-                location: 'Room',
-                readings: [{ timestamp: 't', temp_c: 20, humidity: 50, dewpoint_c: 10, pm25: 5 }],
-            },
-        ];
-        const ds = buildDatasets(sensorsWithPm, []);
-        expect(ds.pm).toHaveLength(1);
-    });
-
-    it('excludes PM dataset for sensibo sensors with all zero pm25', () => {
-        const sensorsNoPm = [
-            {
-                source: 'sensibo',
-                sensor_id: 'x',
-                location: 'Room',
-                readings: [{ timestamp: 't', temp_c: 20, humidity: 50, dewpoint_c: 10, pm25: 0 }],
-            },
-        ];
-        const ds = buildDatasets(sensorsNoPm, []);
-        expect(ds.pm).toHaveLength(0);
-    });
-
-    it('creates AC state datasets as stepped on/off series', () => {
-        const ds = buildDatasets(sensors, acStates);
-        expect(ds.acState).toHaveLength(1);
-        expect(ds.acState[0].label).toBe('Office');
-        expect(ds.acState[0].stepped).toBe(true);
-        expect(ds.acState[0].data).toEqual([
-            { x: '2026-03-17T10:00:00Z', y: 1 },
-            { x: '2026-03-17T11:00:00Z', y: 0 },
-        ]);
-    });
-});
 
 describe('computeStatus', () => {
     it('counts sensors and total readings', () => {
