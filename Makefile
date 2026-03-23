@@ -18,5 +18,5 @@ run: build
 	./airquality
 
 clean:
-	rm -f airquality
-	rm -rf frontend/dist
+	rm -f airquality rooms.html
+	rm -rf frontend/dist frontend/dist-rooms

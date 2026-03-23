@@ -8,6 +8,8 @@ airquality
 # Frontend build artifacts
 frontend/node_modules/
 frontend/dist/
+frontend/dist-rooms/
+rooms.html
 
 # Playwright screenshots
 tmp/
