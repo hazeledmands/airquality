@@ -7,6 +7,7 @@ import { daylightPlugin, setDaylightEnabled, setDaylightPairs } from './daylight
 import { setupDateRange } from './daterange.js';
 import { createDragHandle } from './chart-card.js';
 import { setupReorder } from './reorder.js';
+import { computeXRange, syncXAxes } from './axis-sync.js';
 
 Chart.register(crosshairPlugin);
 Chart.register(maximaLabelsPlugin);
@@ -273,7 +274,6 @@ function updateWeatherCard(weather) {
             { ...makeWeatherTempSeries(weather), yAxisID: 'y' },
             { ...makeUVSeries(weather), yAxisID: 'yUV' },
         ];
-        rc.chart.update();
     }
 }
 
@@ -382,13 +382,17 @@ function updateCharts(data) {
 
     updateWeatherCard(weather);
 
-    // Update chart data
+    // Set chart data (no update yet)
     for (const room of rooms) {
         const rc = roomCharts.find(r => r.room === room.name);
         if (!rc) continue;
         rc.chart.data.datasets = buildCombinedDatasets(room);
-        rc.chart.update();
     }
+
+    // Align all x-axes to the same time range, then update
+    const allCharts = roomCharts.map(rc => rc.chart);
+    syncXAxes(allCharts, computeXRange(allCharts));
+    for (const rc of roomCharts) rc.chart.update();
 
     updateLatestValues(rooms);
     document.getElementById('status').textContent =
