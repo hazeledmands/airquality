@@ -60,6 +60,10 @@ export function filterByRange(data, from, to) {
             const t = new Date(r.timestamp).getTime();
             return t >= fromMs && t <= toMs;
         }),
+        annotations: (data.annotations || []).filter(a => {
+            const t = new Date(a.timestamp).getTime();
+            return t >= fromMs && t <= toMs;
+        }),
     };
 }
 

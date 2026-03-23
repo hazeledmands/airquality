@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"strconv"
 	"time"
 
 	_ "embed"
@@ -16,10 +17,17 @@ import (
 //go:embed rooms.html
 var roomsHTML string
 
+type annotationJSON struct {
+	ID        int64  `json:"id"`
+	Timestamp string `json:"timestamp"`
+	Note      string `json:"note"`
+}
+
 type dashboardData struct {
-	Sensors  []sensorData     `json:"sensors"`
-	ACStates []acStateData    `json:"ac_states"`
-	Weather  []weatherReading `json:"weather"`
+	Sensors     []sensorData     `json:"sensors"`
+	ACStates    []acStateData    `json:"ac_states"`
+	Weather     []weatherReading `json:"weather"`
+	Annotations []annotationJSON `json:"annotations"`
 }
 
 type weatherReading struct {
@@ -172,9 +180,10 @@ func dataHandler(db *store.Store) http.HandlerFunc {
 		from := to.AddDate(0, 0, -30)
 
 		data := &dashboardData{
-			Sensors:  []sensorData{},
-			ACStates: []acStateData{},
-			Weather:  []weatherReading{},
+			Sensors:     []sensorData{},
+			ACStates:    []acStateData{},
+			Weather:     []weatherReading{},
+			Annotations: []annotationJSON{},
 		}
 
 		if db != nil {
@@ -198,10 +207,74 @@ func dataHandler(db *store.Store) http.HandlerFunc {
 			} else {
 				data.Weather = weatherReadings(weatherRows)
 			}
+
+			annotationRows, err := db.QueryAnnotations(r.Context(), from, to)
+			if err != nil {
+				log.Printf("Warning: annotations query: %v", err)
+			} else {
+				for _, a := range annotationRows {
+					data.Annotations = append(data.Annotations, annotationJSON{
+						ID:        a.ID,
+						Timestamp: a.Timestamp.UTC().Format(time.RFC3339),
+						Note:      a.Note,
+					})
+				}
+			}
 		}
 
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(data)
+	}
+}
+
+func annotationsWriteHandler(db *store.Store) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Timestamp string `json:"timestamp"`
+			Note      string `json:"note"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			http.Error(w, "bad request", http.StatusBadRequest)
+			return
+		}
+		ts, err := time.Parse(time.RFC3339, body.Timestamp)
+		if err != nil {
+			http.Error(w, "invalid timestamp", http.StatusBadRequest)
+			return
+		}
+		if body.Note == "" {
+			http.Error(w, "note is required", http.StatusBadRequest)
+			return
+		}
+		a, err := db.InsertAnnotation(r.Context(), ts, body.Note)
+		if err != nil {
+			log.Printf("Warning: insert annotation: %v", err)
+			http.Error(w, "internal error", http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusCreated)
+		json.NewEncoder(w).Encode(annotationJSON{
+			ID:        a.ID,
+			Timestamp: a.Timestamp.UTC().Format(time.RFC3339),
+			Note:      a.Note,
+		})
+	}
+}
+
+func annotationsDeleteHandler(db *store.Store) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+		if err != nil {
+			http.Error(w, "invalid id", http.StatusBadRequest)
+			return
+		}
+		if err := db.DeleteAnnotation(r.Context(), id); err != nil {
+			log.Printf("Warning: delete annotation: %v", err)
+			http.Error(w, "internal error", http.StatusInternalServerError)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
 	}
 }
 

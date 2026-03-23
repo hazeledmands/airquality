@@ -263,6 +263,63 @@ func (s *Store) QueryACStates(ctx context.Context, from, to time.Time) ([]logger
 	return result, rows.Err()
 }
 
+// Annotation is a user-authored note attached to a specific point in time.
+type Annotation struct {
+	ID        int64
+	Timestamp time.Time
+	Note      string
+	CreatedAt time.Time
+}
+
+// InsertAnnotation writes an annotation and returns the saved record with its ID.
+func (s *Store) InsertAnnotation(ctx context.Context, ts time.Time, note string) (Annotation, error) {
+	var a Annotation
+	err := s.pool.QueryRow(ctx, `
+		INSERT INTO annotations (timestamp, note)
+		VALUES ($1, $2)
+		RETURNING id, timestamp, note, created_at`,
+		ts, note,
+	).Scan(&a.ID, &a.Timestamp, &a.Note, &a.CreatedAt)
+	if err != nil {
+		return Annotation{}, fmt.Errorf("insert annotation: %w", err)
+	}
+	return a, nil
+}
+
+// QueryAnnotations returns annotations between from (inclusive) and to (exclusive),
+// ordered ascending.
+func (s *Store) QueryAnnotations(ctx context.Context, from, to time.Time) ([]Annotation, error) {
+	rows, err := s.pool.Query(ctx, `
+		SELECT id, timestamp, note, created_at
+		FROM annotations
+		WHERE timestamp >= $1 AND timestamp < $2
+		ORDER BY timestamp ASC`,
+		from, to,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("query annotations: %w", err)
+	}
+	defer rows.Close()
+	var result []Annotation
+	for rows.Next() {
+		var a Annotation
+		if err := rows.Scan(&a.ID, &a.Timestamp, &a.Note, &a.CreatedAt); err != nil {
+			return nil, fmt.Errorf("scan annotation row: %w", err)
+		}
+		result = append(result, a)
+	}
+	return result, rows.Err()
+}
+
+// DeleteAnnotation removes the annotation with the given ID.
+func (s *Store) DeleteAnnotation(ctx context.Context, id int64) error {
+	_, err := s.pool.Exec(ctx, `DELETE FROM annotations WHERE id = $1`, id)
+	if err != nil {
+		return fmt.Errorf("delete annotation: %w", err)
+	}
+	return nil
+}
+
 // BatchInsertReadings inserts multiple readings in a single round-trip.
 func (s *Store) BatchInsertReadings(ctx context.Context, records []logger.Record) error {
 	if len(records) == 0 {

@@ -213,6 +213,74 @@ func TestQueryReadings_NullableColumns(t *testing.T) {
 	}
 }
 
+// TestAnnotation_RoundTrip verifies that an annotation survives an insert/query
+// cycle and that DeleteAnnotation removes it.
+func TestAnnotation_RoundTrip(t *testing.T) {
+	s := openTestStore(t)
+	ctx := context.Background()
+
+	ts := time.Now().UTC().Truncate(time.Second)
+	note := "opened the window"
+
+	a, err := s.InsertAnnotation(ctx, ts, note)
+	if err != nil {
+		t.Fatalf("InsertAnnotation: %v", err)
+	}
+	if a.ID == 0 {
+		t.Error("expected non-zero ID")
+	}
+	t.Cleanup(func() {
+		s.pool.Exec(ctx, `DELETE FROM annotations WHERE id = $1`, a.ID)
+	})
+
+	rows, err := s.QueryAnnotations(ctx, ts.Add(-time.Second), ts.Add(time.Second))
+	if err != nil {
+		t.Fatalf("QueryAnnotations: %v", err)
+	}
+
+	var got *Annotation
+	for i := range rows {
+		if rows[i].ID == a.ID {
+			got = &rows[i]
+			break
+		}
+	}
+	if got == nil {
+		t.Fatal("inserted annotation not found in QueryAnnotations result")
+	}
+	if got.Note != note {
+		t.Errorf("Note = %q, want %q", got.Note, note)
+	}
+	if !got.Timestamp.Equal(ts) {
+		t.Errorf("Timestamp = %v, want %v", got.Timestamp, ts)
+	}
+}
+
+func TestDeleteAnnotation(t *testing.T) {
+	s := openTestStore(t)
+	ctx := context.Background()
+
+	ts := time.Now().UTC().Truncate(time.Second)
+	a, err := s.InsertAnnotation(ctx, ts, "to be deleted")
+	if err != nil {
+		t.Fatalf("InsertAnnotation: %v", err)
+	}
+
+	if err := s.DeleteAnnotation(ctx, a.ID); err != nil {
+		t.Fatalf("DeleteAnnotation: %v", err)
+	}
+
+	rows, err := s.QueryAnnotations(ctx, ts.Add(-time.Second), ts.Add(time.Second))
+	if err != nil {
+		t.Fatalf("QueryAnnotations after delete: %v", err)
+	}
+	for _, r := range rows {
+		if r.ID == a.ID {
+			t.Error("deleted annotation still returned by QueryAnnotations")
+		}
+	}
+}
+
 // TestQueryWeather_RoundTrip verifies that a weather row survives an
 // insert/query cycle including nullable sunrise/sunset.
 func TestQueryWeather_RoundTrip(t *testing.T) {

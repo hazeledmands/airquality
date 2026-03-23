@@ -8,11 +8,13 @@ import { setupDateRange } from './daterange.js';
 import { createDragHandle } from './chart-card.js';
 import { setupReorder } from './reorder.js';
 import { computeXRange, syncXAxes, computeYRange, syncYAxes } from './axis-sync.js';
+import { annotationsPlugin, setAnnotations, setupAnnotationUI } from './annotations.js';
 
 Chart.register(crosshairPlugin);
 Chart.register(maximaLabelsPlugin);
 Chart.register(humidityHighlightPlugin);
 Chart.register(daylightPlugin);
+Chart.register(annotationsPlugin);
 
 const METRIC_COLORS = {
     temp:     '#fb923c', // orange
@@ -327,6 +329,7 @@ function buildRoomDOM(rooms) {
     }
 
     if (reorder) reorder.bindItems();
+    setupAnnotationUI(roomCharts, { onSave: saveAnnotation, onDelete: deleteAnnotation });
 }
 
 function updateLatestValues(rooms) {
@@ -396,6 +399,7 @@ function updateCharts(data) {
     syncYAxes(allCharts, 'y2', computeYRange(allCharts, 'y2'));
     for (const rc of roomCharts) rc.chart.update();
 
+    setAnnotations(data.annotations || []);
     updateLatestValues(rooms);
     document.getElementById('status').textContent =
         computeStatus(sensors, acStates) + ` \u00B7 updated ${new Date().toLocaleTimeString()}`;
@@ -415,6 +419,28 @@ const { applyFilter, setRangeDefaults } = setupDateRange({
         if (allData) updateCharts(filterByRange(allData, from, to));
     },
 });
+
+async function saveAnnotation(timestamp, note) {
+    try {
+        await fetch('/api/annotations', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ timestamp, note }),
+        });
+        fetchData();
+    } catch (err) {
+        console.error('Failed to save annotation:', err);
+    }
+}
+
+async function deleteAnnotation(id) {
+    try {
+        await fetch(`/api/annotations/${id}`, { method: 'DELETE' });
+        fetchData();
+    } catch (err) {
+        console.error('Failed to delete annotation:', err);
+    }
+}
 
 async function fetchData() {
     try {
