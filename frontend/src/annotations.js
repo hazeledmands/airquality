@@ -129,7 +129,13 @@ function getTooltip() {
 }
 
 function hidePopover() {
-    if (_popover) _popover.style.display = 'none';
+    if (!_popover) return;
+    _popover.style.display = 'none';
+    const input = _popover.querySelector('.ann-input');
+    if (input && input._onKey) {
+        input.removeEventListener('keydown', input._onKey);
+        input._onKey = null;
+    }
 }
 
 function showAddPopover(screenX, screenY, isoTimestamp, room, onSave) {
@@ -169,10 +175,12 @@ function showAddPopover(screenX, screenY, isoTimestamp, room, onSave) {
     newSave.addEventListener('click', doSave);
     newCancel.addEventListener('click', hidePopover);
 
+    if (input._onKey) input.removeEventListener('keydown', input._onKey);
     const onKey = (e) => {
-        if (e.key === 'Enter')  { doSave(); input.removeEventListener('keydown', onKey); }
-        if (e.key === 'Escape') { hidePopover(); input.removeEventListener('keydown', onKey); }
+        if (e.key === 'Enter')  doSave();
+        if (e.key === 'Escape') hidePopover();
     };
+    input._onKey = onKey;
     input.addEventListener('keydown', onKey);
 }
 
