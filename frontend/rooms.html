@@ -4,6 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Air Quality — By Room</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Spectral:ital,wght@0,300;0,400;0,600;1,400&display=swap" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
     <script src="https://cdn.jsdelivr.net/npm/luxon@3"></script>
     <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-luxon@1"></script>
@@ -15,7 +17,7 @@
             color: #e0e0e0;
             padding: 1.5rem;
         }
-        h1 { font-size: 1.4rem; font-weight: 600; }
+        h1 { font-size: 1.4rem; font-weight: 600; font-family: 'Spectral', Georgia, serif; letter-spacing: -0.02em; }
         .header {
             display: flex;
             justify-content: space-between;
@@ -77,10 +79,11 @@
         }
         .room-section h2 {
             font-size: 1.1rem;
-            font-weight: 600;
+            font-weight: 400;
+            font-family: 'Spectral', Georgia, serif;
             margin-bottom: 0.75rem;
             padding-bottom: 0.5rem;
-            border-bottom: 1px solid #ffffff10;
+            border-bottom: 1px solid #ffffff08;
             display: flex;
             align-items: center;
             gap: 0.5rem;
@@ -99,10 +102,7 @@
         .room-section.dragging { opacity: 0.35; }
         .room-section[draggable="true"] { transition: opacity 0.15s ease; }
         .chart-card {
-            background: #16172a;
-            border: 1px solid #ffffff08;
-            border-radius: 10px;
-            padding: 1.25rem;
+            padding: 0.75rem 0;
             overflow: hidden;
         }
         .room-latest {
@@ -111,9 +111,10 @@
             flex-wrap: wrap;
             margin-bottom: 0.75rem;
             font-size: 0.85rem;
+            font-family: 'Spectral', Georgia, serif;
             color: #bbb;
         }
-        .room-latest .value { color: #e0e0e0; font-weight: 500; }
+        .room-latest .value { color: #e0e0e0; font-weight: 500; font-variant-numeric: tabular-nums; }
         .no-data {
             color: #444;
             text-align: center;
@@ -134,7 +135,7 @@
             .header { flex-direction: column; gap: 0.2rem; margin-bottom: 1rem; }
             .status { font-size: 0.7rem; }
             .room-section h2 { font-size: 1rem; }
-            .chart-card { padding: 1rem; }
+            .chart-card { padding: 0.5rem 0; }
             .date-range { gap: 0.4rem; }
             .date-range input[type="datetime-local"] { font-size: 0.75rem; padding: 0.3rem 0.4rem; }
             .date-range label { font-size: 0.65rem; }

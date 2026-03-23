@@ -172,8 +172,7 @@ export function makeUVSeries(weather) {
         label: 'UV Index',
         data,
         borderColor: '#fbbf24',
-        backgroundColor: '#fbbf2440',
-        fill: true,
+        fill: false,
         borderWidth: 1.5,
     };
 }

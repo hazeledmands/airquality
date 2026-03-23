@@ -21,7 +21,7 @@ const METRIC_COLORS = {
     dewpoint: '#38bdf8', // blue
     humidity: '#34d399', // green
     pm:       '#a78bfa', // purple
-    acState:  '#555555', // gray
+    acState:  '#6b7280', // gray
 };
 
 let allData = null;
@@ -70,13 +70,13 @@ function combinedChartOpts(ar, room) {
             },
         },
         plugins: {
-            legend: { labels: { color: '#999', boxWidth: 12, padding: 12 } },
+            legend: { position: 'bottom', labels: { color: '#555', boxWidth: 16, boxHeight: 1, padding: 10, font: { size: 10 } } },
             tooltip: { backgroundColor: '#1e1e30', titleColor: '#ccc', bodyColor: '#aaa', borderColor: '#333', borderWidth: 1 },
             humidityHighlight: { enabled: indoor, threshold: 60 },
         },
         elements: {
             point: { radius: 0, hoverRadius: 4 },
-            line: { borderWidth: 2, tension: 0.3 },
+            line: { borderWidth: 2, tension: 0 },
         },
     };
 
@@ -112,7 +112,7 @@ function buildCombinedDatasets(room) {
             label: 'Temperature',
             yAxisID: 'y',
             borderColor: METRIC_COLORS.temp,
-            backgroundColor: METRIC_COLORS.temp + '18',
+            fill: false,
             peakUnit: '\u00B0F',
         });
     }
@@ -123,7 +123,7 @@ function buildCombinedDatasets(room) {
             label: 'Dew Point',
             yAxisID: 'y',
             borderColor: METRIC_COLORS.dewpoint,
-            backgroundColor: METRIC_COLORS.dewpoint + '18',
+            fill: false,
             borderDash: [5, 3],
             peakUnit: '\u00B0F',
         });
@@ -135,7 +135,7 @@ function buildCombinedDatasets(room) {
             label: 'Humidity',
             yAxisID: 'y1',
             borderColor: METRIC_COLORS.humidity,
-            backgroundColor: METRIC_COLORS.humidity + '18',
+            fill: false,
             peakUnit: '%',
         });
     }
@@ -146,7 +146,7 @@ function buildCombinedDatasets(room) {
             label: 'PM2.5',
             yAxisID: 'y2',
             borderColor: METRIC_COLORS.pm,
-            backgroundColor: METRIC_COLORS.pm + '18',
+            fill: false,
             peakUnit: '\u00B5g/m\u00B3',
         });
     }
@@ -206,13 +206,13 @@ function weatherChartOpts(ar) {
             },
         },
         plugins: {
-            legend: { labels: { color: '#999', boxWidth: 12, padding: 12 } },
+            legend: { position: 'bottom', labels: { color: '#555', boxWidth: 16, boxHeight: 1, padding: 10, font: { size: 10 } } },
             tooltip: { backgroundColor: '#1e1e30', titleColor: '#ccc', bodyColor: '#aaa', borderColor: '#333', borderWidth: 1 },
             humidityHighlight: { enabled: false },
         },
         elements: {
             point: { radius: 0, hoverRadius: 4 },
-            line: { borderWidth: 2, tension: 0.3 },
+            line: { borderWidth: 2, tension: 0 },
         },
     };
 }

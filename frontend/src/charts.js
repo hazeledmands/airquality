@@ -33,7 +33,7 @@ export function chartOpts(aspectRatio) {
         },
         elements: {
             point: { radius: 0, hoverRadius: 4 },
-            line: { borderWidth: 2, tension: 0.3 },
+            line: { borderWidth: 2, tension: 0 },
         },
     };
 }
