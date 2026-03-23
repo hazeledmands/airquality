@@ -7,7 +7,7 @@ import { daylightPlugin, setDaylightEnabled, setDaylightPairs } from './daylight
 import { setupDateRange } from './daterange.js';
 import { createDragHandle } from './chart-card.js';
 import { setupReorder } from './reorder.js';
-import { computeXRange, syncXAxes } from './axis-sync.js';
+import { computeXRange, syncXAxes, computeYRange, syncYAxes } from './axis-sync.js';
 
 Chart.register(crosshairPlugin);
 Chart.register(maximaLabelsPlugin);
@@ -389,9 +389,11 @@ function updateCharts(data) {
         rc.chart.data.datasets = buildCombinedDatasets(room);
     }
 
-    // Align all x-axes to the same time range, then update
+    // Align all axes to the same ranges, then update
     const allCharts = roomCharts.map(rc => rc.chart);
     syncXAxes(allCharts, computeXRange(allCharts));
+    syncYAxes(allCharts, 'y',  computeYRange(allCharts, 'y'));
+    syncYAxes(allCharts, 'y2', computeYRange(allCharts, 'y2'));
     for (const rc of roomCharts) rc.chart.update();
 
     updateLatestValues(rooms);

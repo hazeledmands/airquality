@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { computeXRange, syncXAxes } from '../axis-sync.js';
+import { computeXRange, syncXAxes, computeYRange, syncYAxes } from '../axis-sync.js';
 
 describe('computeXRange', () => {
     it('returns null for empty charts array', () => {
@@ -94,5 +94,104 @@ describe('syncXAxes', () => {
 
     it('handles an empty charts array without error', () => {
         expect(() => syncXAxes([], { min: 0, max: 100 })).not.toThrow();
+    });
+});
+
+describe('computeYRange', () => {
+    it('returns null for empty charts array', () => {
+        expect(computeYRange([], 'y')).toBeNull();
+    });
+
+    it('returns null for charts with no datasets', () => {
+        expect(computeYRange([{ data: { datasets: [] } }], 'y')).toBeNull();
+    });
+
+    it('returns null when no datasets match the axis id', () => {
+        const charts = [{ data: { datasets: [
+            { yAxisID: 'y1', data: [{ x: 0, y: 50 }] },
+        ] } }];
+        expect(computeYRange(charts, 'y')).toBeNull();
+    });
+
+    it('returns null for matching datasets with no data points', () => {
+        const charts = [{ data: { datasets: [{ yAxisID: 'y', data: [] }] } }];
+        expect(computeYRange(charts, 'y')).toBeNull();
+    });
+
+    it('finds min and max across a single dataset', () => {
+        const charts = [{ data: { datasets: [
+            { yAxisID: 'y', data: [{ x: 1, y: 72 }, { x: 2, y: 65 }, { x: 3, y: 80 }] },
+        ] } }];
+        const range = computeYRange(charts, 'y');
+        expect(range.min).toBe(65);
+        expect(range.max).toBe(80);
+    });
+
+    it('spans min/max across multiple charts', () => {
+        const charts = [
+            { data: { datasets: [{ yAxisID: 'y', data: [{ x: 1, y: 70 }, { x: 2, y: 75 }] }] } },
+            { data: { datasets: [{ yAxisID: 'y', data: [{ x: 1, y: 60 }, { x: 2, y: 85 }] }] } },
+        ];
+        const range = computeYRange(charts, 'y');
+        expect(range.min).toBe(60);
+        expect(range.max).toBe(85);
+    });
+
+    it('ignores datasets with a different axis id', () => {
+        const charts = [{ data: { datasets: [
+            { yAxisID: 'y',  data: [{ x: 1, y: 70 }, { x: 2, y: 75 }] },
+            { yAxisID: 'y1', data: [{ x: 1, y: 0  }, { x: 2, y: 100 }] },
+        ] } }];
+        const range = computeYRange(charts, 'y');
+        expect(range.min).toBe(70);
+        expect(range.max).toBe(75);
+    });
+
+    it('spans min/max across multiple datasets within a chart', () => {
+        const charts = [{ data: { datasets: [
+            { yAxisID: 'y', data: [{ x: 1, y: 72 }] },
+            { yAxisID: 'y', data: [{ x: 1, y: 65 }, { x: 2, y: 80 }] },
+        ] } }];
+        const range = computeYRange(charts, 'y');
+        expect(range.min).toBe(65);
+        expect(range.max).toBe(80);
+    });
+
+    it('returns equal min and max for a single data point', () => {
+        const charts = [{ data: { datasets: [{ yAxisID: 'y', data: [{ x: 1, y: 73 }] }] } }];
+        const range = computeYRange(charts, 'y');
+        expect(range.min).toBe(73);
+        expect(range.max).toBe(73);
+    });
+});
+
+describe('syncYAxes', () => {
+    it('sets the same min and max on every chart that has the axis', () => {
+        const chart1 = { options: { scales: { y: {} } } };
+        const chart2 = { options: { scales: { y: {} } } };
+        syncYAxes([chart1, chart2], 'y', { min: 60, max: 85 });
+        expect(chart1.options.scales.y.min).toBe(60);
+        expect(chart1.options.scales.y.max).toBe(85);
+        expect(chart2.options.scales.y.min).toBe(60);
+        expect(chart2.options.scales.y.max).toBe(85);
+    });
+
+    it('skips charts that do not have the axis', () => {
+        const chart1 = { options: { scales: { y: {} } } };
+        const chart2 = { options: { scales: { yUV: {} } } };
+        syncYAxes([chart1, chart2], 'y', { min: 60, max: 85 });
+        expect(chart1.options.scales.y.min).toBe(60);
+        expect(chart2.options.scales.yUV.min).toBeUndefined();
+    });
+
+    it('does nothing when range is null', () => {
+        const chart = { options: { scales: { y: { min: 10, max: 90 } } } };
+        syncYAxes([chart], 'y', null);
+        expect(chart.options.scales.y.min).toBe(10);
+        expect(chart.options.scales.y.max).toBe(90);
+    });
+
+    it('handles an empty charts array without error', () => {
+        expect(() => syncYAxes([], 'y', { min: 0, max: 100 })).not.toThrow();
     });
 });
