@@ -48,12 +48,16 @@ export const annotationsPlugin = {
         const { ctx, chartArea, scales } = chart;
         if (!scales.x) return;
 
+        const chartRoom = chart.options?.plugins?.annotations?.room ?? '';
+        const visible = _annotations.filter(a => !a.room || a.room === chartRoom);
+        if (visible.length === 0) return;
+
         ctx.save();
         ctx.strokeStyle = 'rgba(251, 191, 36, 0.65)';
         ctx.lineWidth = 1.5;
         ctx.setLineDash([4, 4]);
 
-        for (const a of _annotations) {
+        for (const a of visible) {
             const x = scales.x.getPixelForValue(new Date(a.timestamp).getTime());
             if (x < chartArea.left || x > chartArea.right) continue;
             ctx.beginPath();
@@ -65,7 +69,7 @@ export const annotationsPlugin = {
         // Small triangle markers at the top of each line
         ctx.setLineDash([]);
         ctx.fillStyle = 'rgba(251, 191, 36, 0.85)';
-        for (const a of _annotations) {
+        for (const a of visible) {
             const x = scales.x.getPixelForValue(new Date(a.timestamp).getTime());
             if (x < chartArea.left || x > chartArea.right) continue;
             ctx.beginPath();
@@ -128,7 +132,7 @@ function hidePopover() {
     if (_popover) _popover.style.display = 'none';
 }
 
-function showAddPopover(screenX, screenY, isoTimestamp, onSave) {
+function showAddPopover(screenX, screenY, isoTimestamp, room, onSave) {
     const popover = getPopover();
     popover.querySelector('.ann-time').textContent = new Date(isoTimestamp).toLocaleString();
 
@@ -159,7 +163,7 @@ function showAddPopover(screenX, screenY, isoTimestamp, onSave) {
         const note = input.value.trim();
         if (!note) return;
         hidePopover();
-        await onSave(isoTimestamp, note);
+        await onSave(isoTimestamp, note, room);
     };
 
     newSave.addEventListener('click', doSave);
@@ -251,19 +255,23 @@ export function setupAnnotationUI(charts, { onSave, onDelete }) {
             const { chartArea } = chart;
             if (x < chartArea.left || x > chartArea.right) return;
 
-            const ann = findAnnotationAtPixel(chart, x, _annotations);
+            const chartRoom = chart.options?.plugins?.annotations?.room ?? '';
+            const visible = _annotations.filter(a => !a.room || a.room === chartRoom);
+            const ann = findAnnotationAtPixel(chart, x, visible);
             if (ann) {
                 showInfoPopover(e.clientX, e.clientY, ann, onDelete);
             } else {
                 const tsMs = chart.scales.x.getValueForPixel(x);
-                showAddPopover(e.clientX, e.clientY, new Date(tsMs).toISOString(), onSave);
+                showAddPopover(e.clientX, e.clientY, new Date(tsMs).toISOString(), chartRoom, onSave);
             }
         });
 
         canvas.addEventListener('mousemove', (e) => {
             const rect = canvas.getBoundingClientRect();
             const x = e.clientX - rect.left;
-            const ann = findAnnotationAtPixel(chart, x, _annotations);
+            const chartRoom = chart.options?.plugins?.annotations?.room ?? '';
+            const visible = _annotations.filter(a => !a.room || a.room === chartRoom);
+            const ann = findAnnotationAtPixel(chart, x, visible);
 
             if (ann) {
                 const ts = new Date(ann.timestamp).toLocaleString();

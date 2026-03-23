@@ -317,10 +317,12 @@ function buildRoomDOM(rooms) {
         card.appendChild(canvas);
         section.appendChild(card);
 
+        const opts = combinedChartOpts(ar, room);
+        opts.plugins.annotations = { room: room.name };
         const chart = new Chart(canvas, {
             type: 'line',
             data: { datasets: [] },
-            options: combinedChartOpts(ar, room),
+            options: opts,
         });
 
         registerChart(chart);
@@ -420,12 +422,12 @@ const { applyFilter, setRangeDefaults } = setupDateRange({
     },
 });
 
-async function saveAnnotation(timestamp, note) {
+async function saveAnnotation(timestamp, note, room) {
     try {
         const resp = await fetch('/api/annotations', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ timestamp, note }),
+            body: JSON.stringify({ timestamp, note, room }),
         });
         if (resp.ok && allData) {
             // Immediately reflect in the UI so the user sees the marker right away.

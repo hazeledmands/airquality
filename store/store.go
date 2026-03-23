@@ -264,22 +264,29 @@ func (s *Store) QueryACStates(ctx context.Context, from, to time.Time) ([]logger
 }
 
 // Annotation is a user-authored note attached to a specific point in time.
+// Room is empty for annotations that appear on all charts.
 type Annotation struct {
 	ID        int64
 	Timestamp time.Time
 	Note      string
+	Room      string // empty = show on all charts; non-empty = show only on named room
 	CreatedAt time.Time
 }
 
 // InsertAnnotation writes an annotation and returns the saved record with its ID.
-func (s *Store) InsertAnnotation(ctx context.Context, ts time.Time, note string) (Annotation, error) {
+// Pass an empty string for room to create a global annotation visible on all charts.
+func (s *Store) InsertAnnotation(ctx context.Context, ts time.Time, note, room string) (Annotation, error) {
 	var a Annotation
+	var roomArg *string
+	if room != "" {
+		roomArg = &room
+	}
 	err := s.pool.QueryRow(ctx, `
-		INSERT INTO annotations (timestamp, note)
-		VALUES ($1, $2)
-		RETURNING id, timestamp, note, created_at`,
-		ts, note,
-	).Scan(&a.ID, &a.Timestamp, &a.Note, &a.CreatedAt)
+		INSERT INTO annotations (timestamp, note, room)
+		VALUES ($1, $2, $3)
+		RETURNING id, timestamp, note, COALESCE(room, ''), created_at`,
+		ts, note, roomArg,
+	).Scan(&a.ID, &a.Timestamp, &a.Note, &a.Room, &a.CreatedAt)
 	if err != nil {
 		return Annotation{}, fmt.Errorf("insert annotation: %w", err)
 	}
@@ -290,7 +297,7 @@ func (s *Store) InsertAnnotation(ctx context.Context, ts time.Time, note string)
 // ordered ascending.
 func (s *Store) QueryAnnotations(ctx context.Context, from, to time.Time) ([]Annotation, error) {
 	rows, err := s.pool.Query(ctx, `
-		SELECT id, timestamp, note, created_at
+		SELECT id, timestamp, note, COALESCE(room, ''), created_at
 		FROM annotations
 		WHERE timestamp >= $1 AND timestamp < $2
 		ORDER BY timestamp ASC`,
@@ -303,7 +310,7 @@ func (s *Store) QueryAnnotations(ctx context.Context, from, to time.Time) ([]Ann
 	var result []Annotation
 	for rows.Next() {
 		var a Annotation
-		if err := rows.Scan(&a.ID, &a.Timestamp, &a.Note, &a.CreatedAt); err != nil {
+		if err := rows.Scan(&a.ID, &a.Timestamp, &a.Note, &a.Room, &a.CreatedAt); err != nil {
 			return nil, fmt.Errorf("scan annotation row: %w", err)
 		}
 		result = append(result, a)

@@ -127,6 +127,12 @@ describe('findAnnotationAtPixel', () => {
 
 // ---- annotationsPlugin ----
 
+function makeChartWithRoom(minMs, maxMs, room) {
+    const { chart, ctx } = makeChart(minMs, maxMs);
+    chart.options = { plugins: { annotations: { room } } };
+    return { chart, ctx };
+}
+
 describe('annotationsPlugin', () => {
     beforeEach(() => {
         setAnnotations([]);
@@ -139,53 +145,73 @@ describe('annotationsPlugin', () => {
 
     it('does not draw when disabled', () => {
         setAnnotationsEnabled(false);
-        setAnnotations([{ id: 1, timestamp: new Date(500000).toISOString(), note: 'test' }]);
-        const { chart, ctx } = makeChart(0, 1000000);
+        setAnnotations([{ id: 1, timestamp: new Date(500000).toISOString(), note: 'test', room: '' }]);
+        const { chart, ctx } = makeChartWithRoom(0, 1000000, 'Bedroom');
         annotationsPlugin.afterDraw(chart);
         expect(ctx.moveTo).not.toHaveBeenCalled();
     });
 
     it('does not draw when annotations array is empty', () => {
         setAnnotations([]);
-        const { chart, ctx } = makeChart(0, 1000000);
+        const { chart, ctx } = makeChartWithRoom(0, 1000000, 'Bedroom');
         annotationsPlugin.afterDraw(chart);
         expect(ctx.moveTo).not.toHaveBeenCalled();
     });
 
-    it('draws a vertical line for an annotation within chart bounds', () => {
-        setAnnotations([{ id: 1, timestamp: new Date(500000).toISOString(), note: 'test' }]);
-        const { chart, ctx } = makeChart(0, 1000000);
+    it('draws a room annotation on its own chart', () => {
+        setAnnotations([{ id: 1, timestamp: new Date(500000).toISOString(), note: 'test', room: 'Bedroom' }]);
+        const { chart, ctx } = makeChartWithRoom(0, 1000000, 'Bedroom');
         annotationsPlugin.afterDraw(chart);
-        // 1 moveTo for the vertical line + 1 moveTo for the triangle marker
-        expect(ctx.moveTo).toHaveBeenCalledTimes(2);
+        expect(ctx.moveTo).toHaveBeenCalledTimes(2); // line + triangle
         expect(ctx.lineTo).toHaveBeenCalled();
     });
 
-    it('draws at the correct x pixel', () => {
-        // T=500000 maps to x=500 on a 0..1000000 range with width 1000
-        setAnnotations([{ id: 1, timestamp: new Date(500000).toISOString(), note: 'test' }]);
-        const { chart, ctx } = makeChart(0, 1000000);
-        annotationsPlugin.afterDraw(chart);
-        expect(ctx.moveTo).toHaveBeenCalledWith(500, 0);   // chartArea.top = 0
-        expect(ctx.lineTo).toHaveBeenCalledWith(500, 400); // chartArea.bottom = 400
-    });
-
-    it('skips annotations outside chart bounds', () => {
-        // timestamp maps to x < chartArea.left (0)
-        setAnnotations([{ id: 1, timestamp: new Date(-100000).toISOString(), note: 'outside' }]);
-        const { chart, ctx } = makeChart(0, 1000000);
+    it('does not draw a room annotation on a different chart', () => {
+        setAnnotations([{ id: 1, timestamp: new Date(500000).toISOString(), note: 'test', room: 'Bedroom' }]);
+        const { chart, ctx } = makeChartWithRoom(0, 1000000, 'Office');
         annotationsPlugin.afterDraw(chart);
         expect(ctx.moveTo).not.toHaveBeenCalled();
     });
 
-    it('draws multiple annotations', () => {
-        setAnnotations([
-            { id: 1, timestamp: new Date(300000).toISOString(), note: 'first'  },
-            { id: 2, timestamp: new Date(700000).toISOString(), note: 'second' },
-        ]);
-        const { chart, ctx } = makeChart(0, 1000000);
+    it('draws a global annotation (empty room) on any chart', () => {
+        setAnnotations([{ id: 1, timestamp: new Date(500000).toISOString(), note: 'test', room: '' }]);
+        const { chart, ctx } = makeChartWithRoom(0, 1000000, 'Office');
         annotationsPlugin.afterDraw(chart);
-        // 2 moveTo calls per annotation (line + triangle marker)
-        expect(ctx.moveTo).toHaveBeenCalledTimes(4);
+        expect(ctx.moveTo).toHaveBeenCalled();
+    });
+
+    it('draws at the correct x pixel', () => {
+        setAnnotations([{ id: 1, timestamp: new Date(500000).toISOString(), note: 'test', room: 'Bedroom' }]);
+        const { chart, ctx } = makeChartWithRoom(0, 1000000, 'Bedroom');
+        annotationsPlugin.afterDraw(chart);
+        expect(ctx.moveTo).toHaveBeenCalledWith(500, 0);
+        expect(ctx.lineTo).toHaveBeenCalledWith(500, 400);
+    });
+
+    it('skips annotations outside chart bounds', () => {
+        setAnnotations([{ id: 1, timestamp: new Date(-100000).toISOString(), note: 'outside', room: 'Bedroom' }]);
+        const { chart, ctx } = makeChartWithRoom(0, 1000000, 'Bedroom');
+        annotationsPlugin.afterDraw(chart);
+        expect(ctx.moveTo).not.toHaveBeenCalled();
+    });
+
+    it('draws multiple annotations for the same room', () => {
+        setAnnotations([
+            { id: 1, timestamp: new Date(300000).toISOString(), note: 'first',  room: 'Bedroom' },
+            { id: 2, timestamp: new Date(700000).toISOString(), note: 'second', room: 'Bedroom' },
+        ]);
+        const { chart, ctx } = makeChartWithRoom(0, 1000000, 'Bedroom');
+        annotationsPlugin.afterDraw(chart);
+        expect(ctx.moveTo).toHaveBeenCalledTimes(4); // 2 per annotation
+    });
+
+    it('only draws annotations matching the chart room', () => {
+        setAnnotations([
+            { id: 1, timestamp: new Date(300000).toISOString(), note: 'bedroom', room: 'Bedroom' },
+            { id: 2, timestamp: new Date(700000).toISOString(), note: 'office',  room: 'Office' },
+        ]);
+        const { chart, ctx } = makeChartWithRoom(0, 1000000, 'Bedroom');
+        annotationsPlugin.afterDraw(chart);
+        expect(ctx.moveTo).toHaveBeenCalledTimes(2); // only the Bedroom annotation
     });
 });

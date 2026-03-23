@@ -21,6 +21,7 @@ type annotationJSON struct {
 	ID        int64  `json:"id"`
 	Timestamp string `json:"timestamp"`
 	Note      string `json:"note"`
+	Room      string `json:"room"` // empty = global (all charts)
 }
 
 type dashboardData struct {
@@ -217,6 +218,7 @@ func dataHandler(db *store.Store) http.HandlerFunc {
 						ID:        a.ID,
 						Timestamp: a.Timestamp.UTC().Format(time.RFC3339),
 						Note:      a.Note,
+						Room:      a.Room,
 					})
 				}
 			}
@@ -232,6 +234,7 @@ func annotationsWriteHandler(db *store.Store) http.HandlerFunc {
 		var body struct {
 			Timestamp string `json:"timestamp"`
 			Note      string `json:"note"`
+			Room      string `json:"room"` // optional; empty = global
 		}
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			http.Error(w, "bad request", http.StatusBadRequest)
@@ -246,7 +249,7 @@ func annotationsWriteHandler(db *store.Store) http.HandlerFunc {
 			http.Error(w, "note is required", http.StatusBadRequest)
 			return
 		}
-		a, err := db.InsertAnnotation(r.Context(), ts, body.Note)
+		a, err := db.InsertAnnotation(r.Context(), ts, body.Note, body.Room)
 		if err != nil {
 			log.Printf("Warning: insert annotation: %v", err)
 			http.Error(w, "internal error", http.StatusInternalServerError)
@@ -258,6 +261,7 @@ func annotationsWriteHandler(db *store.Store) http.HandlerFunc {
 			ID:        a.ID,
 			Timestamp: a.Timestamp.UTC().Format(time.RFC3339),
 			Note:      a.Note,
+			Room:      a.Room,
 		})
 	}
 }

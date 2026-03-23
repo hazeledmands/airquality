@@ -222,7 +222,7 @@ func TestAnnotation_RoundTrip(t *testing.T) {
 	ts := time.Now().UTC().Truncate(time.Second)
 	note := "opened the window"
 
-	a, err := s.InsertAnnotation(ctx, ts, note)
+	a, err := s.InsertAnnotation(ctx, ts, note, "")
 	if err != nil {
 		t.Fatalf("InsertAnnotation: %v", err)
 	}
@@ -254,6 +254,45 @@ func TestAnnotation_RoundTrip(t *testing.T) {
 	if !got.Timestamp.Equal(ts) {
 		t.Errorf("Timestamp = %v, want %v", got.Timestamp, ts)
 	}
+	if got.Room != "" {
+		t.Errorf("Room = %q, want empty for global annotation", got.Room)
+	}
+}
+
+func TestAnnotation_WithRoom(t *testing.T) {
+	s := openTestStore(t)
+	ctx := context.Background()
+
+	ts := time.Now().UTC().Truncate(time.Second)
+	a, err := s.InsertAnnotation(ctx, ts, "ran the Vornado", "Bedroom")
+	if err != nil {
+		t.Fatalf("InsertAnnotation: %v", err)
+	}
+	t.Cleanup(func() {
+		s.pool.Exec(ctx, `DELETE FROM annotations WHERE id = $1`, a.ID)
+	})
+
+	if a.Room != "Bedroom" {
+		t.Errorf("Room = %q, want %q", a.Room, "Bedroom")
+	}
+
+	rows, err := s.QueryAnnotations(ctx, ts.Add(-time.Second), ts.Add(time.Second))
+	if err != nil {
+		t.Fatalf("QueryAnnotations: %v", err)
+	}
+	var got *Annotation
+	for i := range rows {
+		if rows[i].ID == a.ID {
+			got = &rows[i]
+			break
+		}
+	}
+	if got == nil {
+		t.Fatal("inserted annotation not found in QueryAnnotations result")
+	}
+	if got.Room != "Bedroom" {
+		t.Errorf("Room = %q, want %q", got.Room, "Bedroom")
+	}
 }
 
 func TestDeleteAnnotation(t *testing.T) {
@@ -261,7 +300,7 @@ func TestDeleteAnnotation(t *testing.T) {
 	ctx := context.Background()
 
 	ts := time.Now().UTC().Truncate(time.Second)
-	a, err := s.InsertAnnotation(ctx, ts, "to be deleted")
+	a, err := s.InsertAnnotation(ctx, ts, "to be deleted", "")
 	if err != nil {
 		t.Fatalf("InsertAnnotation: %v", err)
 	}
