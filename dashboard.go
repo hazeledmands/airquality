@@ -13,9 +13,6 @@ import (
 	"github.com/hazel/airquality/store"
 )
 
-//go:embed dashboard.html
-var dashboardHTML string
-
 //go:embed rooms.html
 var roomsHTML string
 
@@ -205,13 +202,6 @@ func dataHandler(db *store.Store) http.HandlerFunc {
 
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(data)
-	}
-}
-
-func dashboardHandler() http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		w.Write([]byte(dashboardHTML))
 	}
 }
 

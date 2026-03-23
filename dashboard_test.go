@@ -19,8 +19,8 @@ func TestDataHandler_ReturnsJSON(t *testing.T) {
 	}
 }
 
-func TestDashboardHandler_ReturnsHTML(t *testing.T) {
-	handler := dashboardHandler()
+func TestRoomsHandler_ReturnsHTML(t *testing.T) {
+	handler := roomsHandler()
 	req := httptest.NewRequest("GET", "/", nil)
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, req)
@@ -30,6 +30,6 @@ func TestDashboardHandler_ReturnsHTML(t *testing.T) {
 	}
 	body := w.Body.String()
 	if len(body) < 100 {
-		t.Error("response too short to be the dashboard HTML")
+		t.Error("response too short to be the rooms HTML")
 	}
 }

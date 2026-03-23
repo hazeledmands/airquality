@@ -99,7 +99,6 @@ func main() {
 		mux := http.NewServeMux()
 		mux.Handle("/metrics", m.Handler())
 		mux.HandleFunc("/api/data", dataHandler(db))
-		mux.HandleFunc("/by-metric", dashboardHandler())
 		mux.HandleFunc("/", roomsHandler())
 		log.Printf("Dashboard at http://0.0.0.0:%d/ (accessible from any machine on the network)", cfg.port)
 		log.Printf("Prometheus metrics at http://0.0.0.0:%d/metrics", cfg.port)

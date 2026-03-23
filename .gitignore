@@ -18,3 +18,4 @@ run-dev.sh
 # Tool config
 .claude/
 .serena/
+*.csv
