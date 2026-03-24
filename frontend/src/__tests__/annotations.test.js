@@ -1,10 +1,11 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import {
     filterAnnotations,
     findAnnotationAtPixel,
     annotationsPlugin,
     setAnnotations,
     setAnnotationsEnabled,
+    setupAnnotationUI,
 } from '../annotations.js';
 
 // ---- helpers ----
@@ -213,5 +214,92 @@ describe('annotationsPlugin', () => {
         const { chart, ctx } = makeChartWithRoom(0, 1000000, 'Bedroom');
         annotationsPlugin.afterDraw(chart);
         expect(ctx.moveTo).toHaveBeenCalledTimes(2); // only the Bedroom annotation
+    });
+});
+
+// ---- setupAnnotationUI ----
+
+function makeCanvas() {
+    const listeners = {};
+    return {
+        addEventListener: vi.fn((type, fn) => { listeners[type] = fn; }),
+        removeEventListener: vi.fn(),
+        style: {},
+        getBoundingClientRect: () => ({ left: 0, top: 0 }),
+        _listeners: listeners,
+    };
+}
+
+describe('setupAnnotationUI', () => {
+    let addedToDoc, removedFromDoc;
+
+    beforeEach(() => {
+        addedToDoc = [];
+        removedFromDoc = [];
+        vi.stubGlobal('document', {
+            createElement: vi.fn(() => ({
+                style: { cssText: '' },
+                innerHTML: '',
+                appendChild: vi.fn(),
+                querySelector: vi.fn(() => ({ style: {}, value: '', addEventListener: vi.fn() })),
+            })),
+            body: { appendChild: vi.fn() },
+            addEventListener: vi.fn((type, fn, opts) => addedToDoc.push({ type, fn, opts })),
+            removeEventListener: vi.fn((type, fn, opts) => removedFromDoc.push({ type, fn, opts })),
+        });
+    });
+
+    afterEach(() => {
+        vi.unstubAllGlobals();
+    });
+
+    it('returns a cleanup function', () => {
+        const canvas = makeCanvas();
+        const chart = { canvas, scales: {}, options: {} };
+        const cleanup = setupAnnotationUI([{ chart }], { onSave: vi.fn(), onDelete: vi.fn() });
+        expect(typeof cleanup).toBe('function');
+    });
+
+    it('registers click, mousemove, mouseleave on each canvas', () => {
+        const canvas = makeCanvas();
+        const chart = { canvas, scales: {}, options: {} };
+        setupAnnotationUI([{ chart }], { onSave: vi.fn(), onDelete: vi.fn() });
+        expect(canvas.addEventListener).toHaveBeenCalledWith('click', expect.any(Function));
+        expect(canvas.addEventListener).toHaveBeenCalledWith('mousemove', expect.any(Function));
+        expect(canvas.addEventListener).toHaveBeenCalledWith('mouseleave', expect.any(Function));
+    });
+
+    it('registers a document click listener for outside-click dismissal', () => {
+        const canvas = makeCanvas();
+        const chart = { canvas, scales: {}, options: {} };
+        setupAnnotationUI([{ chart }], { onSave: vi.fn(), onDelete: vi.fn() });
+        expect(addedToDoc.some(e => e.type === 'click')).toBe(true);
+    });
+
+    it('cleanup removes the document click listener', () => {
+        const canvas = makeCanvas();
+        const chart = { canvas, scales: {}, options: {} };
+        const cleanup = setupAnnotationUI([{ chart }], { onSave: vi.fn(), onDelete: vi.fn() });
+        cleanup();
+        expect(removedFromDoc.some(e => e.type === 'click')).toBe(true);
+    });
+
+    it('cleanup removes canvas listeners', () => {
+        const canvas = makeCanvas();
+        const chart = { canvas, scales: {}, options: {} };
+        const cleanup = setupAnnotationUI([{ chart }], { onSave: vi.fn(), onDelete: vi.fn() });
+        cleanup();
+        expect(canvas.removeEventListener).toHaveBeenCalledWith('click', expect.any(Function));
+        expect(canvas.removeEventListener).toHaveBeenCalledWith('mousemove', expect.any(Function));
+        expect(canvas.removeEventListener).toHaveBeenCalledWith('mouseleave', expect.any(Function));
+    });
+
+    it('cleanup removes stored handler references from canvas', () => {
+        const canvas = makeCanvas();
+        const chart = { canvas, scales: {}, options: {} };
+        const cleanup = setupAnnotationUI([{ chart }], { onSave: vi.fn(), onDelete: vi.fn() });
+        expect(canvas._annotationHandlers).toBeDefined();
+        cleanup();
+        expect(canvas._annotationHandlers).toBeUndefined();
     });
 });

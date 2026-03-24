@@ -237,11 +237,12 @@ function showInfoPopover(screenX, screenY, annotation, onDelete) {
 
 // Sets up click (add/delete) and mousemove (tooltip) handlers on every chart canvas.
 // Call this after building the chart DOM. `callbacks` is `{ onSave, onDelete }`.
+// Returns a cleanup function — call it before rebuilding the DOM to remove all listeners.
 export function setupAnnotationUI(charts, { onSave, onDelete }) {
     const tooltip = getTooltip();
 
     // Close popover on outside click
-    document.addEventListener('click', (e) => {
+    const onDocClick = (e) => {
         if (_popover && _popover.style.display !== 'none' &&
             !_popover.contains(e.target) && e.target.tagName !== 'CANVAS') {
             hidePopover();
@@ -250,13 +251,14 @@ export function setupAnnotationUI(charts, { onSave, onDelete }) {
             const noteEl = _popover.querySelector('.ann-note');
             if (noteEl) noteEl.style.display = 'none';
         }
-    }, { capture: true });
+    };
+    document.addEventListener('click', onDocClick, { capture: true });
 
     for (const { chart } of charts) {
         const canvas = chart.canvas;
         if (!canvas) continue;
 
-        canvas.addEventListener('click', (e) => {
+        const onClick = (e) => {
             if (!chart.scales.x) return;
             const rect = canvas.getBoundingClientRect();
             const x = e.clientX - rect.left;
@@ -272,9 +274,9 @@ export function setupAnnotationUI(charts, { onSave, onDelete }) {
                 const tsMs = chart.scales.x.getValueForPixel(x);
                 showAddPopover(e.clientX, e.clientY, new Date(tsMs).toISOString(), chartRoom, onSave);
             }
-        });
+        };
 
-        canvas.addEventListener('mousemove', (e) => {
+        const onMouseMove = (e) => {
             const rect = canvas.getBoundingClientRect();
             const x = e.clientX - rect.left;
             const chartRoom = chart.options?.plugins?.annotations?.room ?? '';
@@ -298,11 +300,30 @@ export function setupAnnotationUI(charts, { onSave, onDelete }) {
                 tooltip.style.display = 'none';
                 canvas.style.cursor = '';
             }
-        });
+        };
 
-        canvas.addEventListener('mouseleave', () => {
+        const onMouseLeave = () => {
             tooltip.style.display = 'none';
             canvas.style.cursor = '';
-        });
+        };
+
+        canvas.addEventListener('click', onClick);
+        canvas.addEventListener('mousemove', onMouseMove);
+        canvas.addEventListener('mouseleave', onMouseLeave);
+
+        canvas._annotationHandlers = { onClick, onMouseMove, onMouseLeave };
     }
+
+    return function cleanup() {
+        document.removeEventListener('click', onDocClick, { capture: true });
+        for (const { chart } of charts) {
+            const canvas = chart.canvas;
+            if (!canvas || !canvas._annotationHandlers) continue;
+            const { onClick, onMouseMove, onMouseLeave } = canvas._annotationHandlers;
+            canvas.removeEventListener('click', onClick);
+            canvas.removeEventListener('mousemove', onMouseMove);
+            canvas.removeEventListener('mouseleave', onMouseLeave);
+            delete canvas._annotationHandlers;
+        }
+    };
 }

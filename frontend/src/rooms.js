@@ -28,6 +28,7 @@ const METRIC_COLORS = {
 
 let allData = null;
 let roomCharts = []; // { room, chart }
+let cleanupAnnotationUI = null;
 let reorder = null;
 let outdoorTempEnabled = false;
 let currentWeather = [];
@@ -285,7 +286,8 @@ function buildRoomDOM(rooms) {
     const container = document.getElementById('rooms-container');
     container.innerHTML = '';
 
-    // Unregister old charts
+    // Teardown old annotation listeners and charts
+    if (cleanupAnnotationUI) { cleanupAnnotationUI(); cleanupAnnotationUI = null; }
     for (const rc of roomCharts) {
         unregisterChart(rc.chart);
     }
@@ -333,7 +335,7 @@ function buildRoomDOM(rooms) {
     }
 
     if (reorder) reorder.bindItems();
-    setupAnnotationUI(roomCharts, { onSave: saveAnnotation, onDelete: deleteAnnotation });
+    cleanupAnnotationUI = setupAnnotationUI(roomCharts, { onSave: saveAnnotation, onDelete: deleteAnnotation });
 }
 
 function updateLatestValues(rooms) {
