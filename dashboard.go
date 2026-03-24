@@ -190,28 +190,28 @@ func dataHandler(db *store.Store) http.HandlerFunc {
 		if db != nil {
 			readings, err := db.QueryReadings(r.Context(), from, to)
 			if err != nil {
-				log.Printf("Warning: readings query: %v", err)
+				log.Printf("query readings: %v", err)
 			} else {
 				data.Sensors = groupReadings(readings)
 			}
 
 			acRecords, err := db.QueryACStates(r.Context(), from, to)
 			if err != nil {
-				log.Printf("Warning: ac states query: %v", err)
+				log.Printf("query ac states: %v", err)
 			} else {
 				data.ACStates = groupACStates(acRecords)
 			}
 
 			weatherRows, err := db.QueryWeather(r.Context(), from, to)
 			if err != nil {
-				log.Printf("Warning: weather query: %v", err)
+				log.Printf("query weather: %v", err)
 			} else {
 				data.Weather = weatherReadings(weatherRows)
 			}
 
 			annotationRows, err := db.QueryAnnotations(r.Context(), from, to)
 			if err != nil {
-				log.Printf("Warning: annotations query: %v", err)
+				log.Printf("query annotations: %v", err)
 			} else {
 				for _, a := range annotationRows {
 					data.Annotations = append(data.Annotations, annotationJSON{
@@ -225,7 +225,9 @@ func dataHandler(db *store.Store) http.HandlerFunc {
 		}
 
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(data)
+		if err := json.NewEncoder(w).Encode(data); err != nil {
+			log.Printf("encode data response: %v", err)
+		}
 	}
 }
 
@@ -251,18 +253,20 @@ func annotationsWriteHandler(db *store.Store) http.HandlerFunc {
 		}
 		a, err := db.InsertAnnotation(r.Context(), ts, body.Note, body.Room)
 		if err != nil {
-			log.Printf("Warning: insert annotation: %v", err)
+			log.Printf("insert annotation: %v", err)
 			http.Error(w, "internal error", http.StatusInternalServerError)
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusCreated)
-		json.NewEncoder(w).Encode(annotationJSON{
+		if err := json.NewEncoder(w).Encode(annotationJSON{
 			ID:        a.ID,
 			Timestamp: a.Timestamp.UTC().Format(time.RFC3339),
 			Note:      a.Note,
 			Room:      a.Room,
-		})
+		}); err != nil {
+			log.Printf("encode annotation response: %v", err)
+		}
 	}
 }
 
@@ -274,7 +278,7 @@ func annotationsDeleteHandler(db *store.Store) http.HandlerFunc {
 			return
 		}
 		if err := db.DeleteAnnotation(r.Context(), id); err != nil {
-			log.Printf("Warning: delete annotation: %v", err)
+			log.Printf("delete annotation: %v", err)
 			http.Error(w, "internal error", http.StatusInternalServerError)
 			return
 		}

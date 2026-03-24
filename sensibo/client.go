@@ -45,7 +45,12 @@ func (c *Client) get(ctx context.Context, path string) ([]byte, error) {
 	var lastErr error
 	for attempt := 0; attempt <= maxRetries; attempt++ {
 		if attempt > 0 {
-			time.Sleep(c.retryDelay * time.Duration(1<<(attempt-1)))
+			delay := c.retryDelay * time.Duration(1<<(attempt-1))
+			select {
+			case <-time.After(delay):
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			}
 		}
 
 		req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
@@ -67,7 +72,11 @@ func (c *Client) get(ctx context.Context, path string) ([]byte, error) {
 			// Honor Retry-After header if present.
 			if ra := resp.Header.Get("Retry-After"); ra != "" {
 				if secs, err := strconv.Atoi(ra); err == nil {
-					time.Sleep(time.Duration(secs) * time.Second)
+					select {
+					case <-time.After(time.Duration(secs) * time.Second):
+					case <-ctx.Done():
+						return nil, ctx.Err()
+					}
 					attempt-- // don't count this against the retry budget
 					if attempt < -maxRetries {
 						break // safety valve
