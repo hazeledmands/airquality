@@ -4,7 +4,7 @@ import { DEFAULT_DATE_RANGE_MS } from './config.js';
 const DATE_PARAMS = new Set(['from', 'to', 'preset']);
 
 function updateURL(params) {
-    const url = new URL(window.location);
+    const url = new URL(location.href);
     // Remove only date-range params, preserve everything else (e.g. order, roomOrder)
     for (const key of DATE_PARAMS) url.searchParams.delete(key);
     for (const [k, v] of Object.entries(params)) {
@@ -14,7 +14,7 @@ function updateURL(params) {
 }
 
 function readURL() {
-    const params = new URLSearchParams(window.location.search);
+    const params = new URLSearchParams(location.search);
     return {
         from: params.get('from'),
         to: params.get('to'),
