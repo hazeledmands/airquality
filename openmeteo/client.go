@@ -2,6 +2,7 @@
 package openmeteo
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -66,7 +67,7 @@ type apiResponse struct {
 }
 
 // Fetch retrieves current conditions and today's sunrise/sunset.
-func (c *Client) Fetch() (Reading, error) {
+func (c *Client) Fetch(ctx context.Context) (Reading, error) {
 	params := url.Values{}
 	params.Set("latitude", fmt.Sprintf("%f", c.Latitude))
 	params.Set("longitude", fmt.Sprintf("%f", c.Longitude))
@@ -76,7 +77,11 @@ func (c *Client) Fetch() (Reading, error) {
 	params.Set("forecast_days", "1")
 
 	u := fmt.Sprintf("%s/v1/forecast?%s", c.baseURL, params.Encode())
-	resp, err := c.http.Get(u)
+	req, err := http.NewRequestWithContext(ctx, "GET", u, nil)
+	if err != nil {
+		return Reading{}, fmt.Errorf("fetch weather: %w", err)
+	}
+	resp, err := c.http.Do(req)
 	if err != nil {
 		return Reading{}, fmt.Errorf("fetch weather: %w", err)
 	}

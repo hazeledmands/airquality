@@ -46,7 +46,7 @@ func TestFetch(t *testing.T) {
 	c := NewClient(37.831, -122.285)
 	c.baseURL = srv.URL
 
-	reading, err := c.Fetch()
+	reading, err := c.Fetch(t.Context())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -103,7 +103,7 @@ func TestFetch_APIError(t *testing.T) {
 	c := NewClient(0, 0)
 	c.baseURL = srv.URL
 
-	_, err := c.Fetch()
+	_, err := c.Fetch(t.Context())
 	if err == nil {
 		t.Fatal("expected error for 400 response")
 	}
@@ -123,7 +123,7 @@ func TestFetch_EmptyDaily(t *testing.T) {
 	c := NewClient(37.831, -122.285)
 	c.baseURL = srv.URL
 
-	reading, err := c.Fetch()
+	reading, err := c.Fetch(t.Context())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

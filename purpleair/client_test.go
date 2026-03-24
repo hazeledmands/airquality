@@ -56,7 +56,7 @@ func TestFetchReading(t *testing.T) {
 	defer srv.Close()
 
 	client := NewClient([]string{srv.Listener.Addr().String()})
-	readings, err := client.FetchAll()
+	readings, err := client.FetchAll(t.Context())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -124,7 +124,7 @@ func TestFetchReading_HTTPError(t *testing.T) {
 	defer srv.Close()
 
 	client := NewClient([]string{srv.Listener.Addr().String()})
-	_, err := client.FetchAll()
+	_, err := client.FetchAll(t.Context())
 	if err == nil {
 		t.Fatal("expected error for 503 response")
 	}
@@ -132,7 +132,7 @@ func TestFetchReading_HTTPError(t *testing.T) {
 
 func TestFetchReading_ConnectionRefused(t *testing.T) {
 	client := NewClient([]string{"127.0.0.1:1"}) // nothing listening
-	_, err := client.FetchAll()
+	_, err := client.FetchAll(t.Context())
 	if err == nil {
 		t.Fatal("expected error for connection refused")
 	}
@@ -149,7 +149,7 @@ func TestFetchAll_MultipleHosts(t *testing.T) {
 		srv2.Listener.Addr().String(),
 	})
 
-	readings, err := client.FetchAll()
+	readings, err := client.FetchAll(t.Context())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

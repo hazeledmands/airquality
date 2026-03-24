@@ -1,6 +1,7 @@
 package purpleair
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -27,9 +28,13 @@ func NewClient(hosts []string) *Client {
 }
 
 // Fetch retrieves the current reading from a single sensor host.
-func (c *Client) Fetch(host string) (SensorReading, error) {
+func (c *Client) Fetch(ctx context.Context, host string) (SensorReading, error) {
 	url := fmt.Sprintf("http://%s/json", host)
-	resp, err := c.HTTPClient.Get(url)
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	if err != nil {
+		return SensorReading{}, fmt.Errorf("fetch %s: %w", host, err)
+	}
+	resp, err := c.HTTPClient.Do(req)
 	if err != nil {
 		return SensorReading{}, fmt.Errorf("fetch %s: %w", host, err)
 	}
@@ -55,10 +60,10 @@ func (c *Client) Fetch(host string) (SensorReading, error) {
 
 // FetchAll retrieves readings from all configured sensor hosts.
 // Returns an error if any sensor fails.
-func (c *Client) FetchAll() ([]SensorReading, error) {
+func (c *Client) FetchAll(ctx context.Context) ([]SensorReading, error) {
 	var readings []SensorReading
 	for _, host := range c.Hosts {
-		r, err := c.Fetch(host)
+		r, err := c.Fetch(ctx, host)
 		if err != nil {
 			return nil, err
 		}

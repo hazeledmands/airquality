@@ -1,6 +1,7 @@
 package sensibo
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -38,7 +39,7 @@ func NewClient(apiKey string) *Client {
 	}
 }
 
-func (c *Client) get(path string) ([]byte, error) {
+func (c *Client) get(ctx context.Context, path string) ([]byte, error) {
 	url := fmt.Sprintf("%s%s&apiKey=%s", baseURL, path, c.APIKey)
 
 	var lastErr error
@@ -47,7 +48,7 @@ func (c *Client) get(path string) ([]byte, error) {
 			time.Sleep(c.retryDelay * time.Duration(1<<(attempt-1)))
 		}
 
-		req, err := http.NewRequest("GET", url, nil)
+		req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 		if err != nil {
 			return nil, err
 		}
@@ -91,8 +92,8 @@ func (c *Client) get(path string) ([]byte, error) {
 }
 
 // GetDevices returns all devices associated with the account.
-func (c *Client) GetDevices() ([]Device, error) {
-	data, err := c.get("/users/me/pods?fields=id,room")
+func (c *Client) GetDevices(ctx context.Context) ([]Device, error) {
+	data, err := c.get(ctx, "/users/me/pods?fields=id,room")
 	if err != nil {
 		return nil, fmt.Errorf("get devices: %w", err)
 	}
@@ -105,9 +106,9 @@ func (c *Client) GetDevices() ([]Device, error) {
 }
 
 // GetHistoricalMeasurements returns sensor data for a device over the given number of days.
-func (c *Client) GetHistoricalMeasurements(deviceID string, days int) (HistoricalMeasurements, error) {
+func (c *Client) GetHistoricalMeasurements(ctx context.Context, deviceID string, days int) (HistoricalMeasurements, error) {
 	path := fmt.Sprintf("/pods/%s/historicalMeasurements?days=%d", deviceID, days)
-	data, err := c.get(path)
+	data, err := c.get(ctx, path)
 	if err != nil {
 		return HistoricalMeasurements{}, fmt.Errorf("get measurements for %s: %w", deviceID, err)
 	}
@@ -121,9 +122,9 @@ func (c *Client) GetHistoricalMeasurements(deviceID string, days int) (Historica
 }
 
 // GetACStates returns recent AC state changes for a device.
-func (c *Client) GetACStates(deviceID string, limit int) ([]ACStateChange, error) {
+func (c *Client) GetACStates(ctx context.Context, deviceID string, limit int) ([]ACStateChange, error) {
 	path := fmt.Sprintf("/pods/%s/acStates?limit=%d", deviceID, limit)
-	data, err := c.get(path)
+	data, err := c.get(ctx, path)
 	if err != nil {
 		return nil, fmt.Errorf("get ac states for %s: %w", deviceID, err)
 	}

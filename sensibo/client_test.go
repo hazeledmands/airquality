@@ -26,7 +26,7 @@ func TestGetDevices(t *testing.T) {
 	defer func() { setBaseURL(origBase) }()
 	setBaseURL(srv.URL)
 
-	devices, err := c.GetDevices()
+	devices, err := c.GetDevices(t.Context())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -61,7 +61,7 @@ func TestGetHistoricalMeasurements(t *testing.T) {
 	defer func() { setBaseURL(origBase) }()
 	setBaseURL(srv.URL)
 
-	m, err := c.GetHistoricalMeasurements("abc123", 1)
+	m, err := c.GetHistoricalMeasurements(t.Context(), "abc123", 1)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -88,7 +88,7 @@ func TestGetDevices_APIError(t *testing.T) {
 	defer func() { setBaseURL(origBase) }()
 	setBaseURL(srv.URL)
 
-	_, err := c.GetDevices()
+	_, err := c.GetDevices(t.Context())
 	if err == nil {
 		t.Fatal("expected error for 403 response")
 	}
@@ -113,7 +113,7 @@ func TestGet_RetriesOn429(t *testing.T) {
 	defer func() { setBaseURL(origBase) }()
 	setBaseURL(srv.URL)
 
-	_, err := c.GetDevices()
+	_, err := c.GetDevices(t.Context())
 	if err != nil {
 		t.Fatalf("expected success after retries, got: %v", err)
 	}
@@ -144,7 +144,7 @@ func TestGet_RespectsRetryAfterHeader(t *testing.T) {
 	defer func() { setBaseURL(origBase) }()
 	setBaseURL(srv.URL)
 
-	_, err := c.GetDevices()
+	_, err := c.GetDevices(t.Context())
 	if err != nil {
 		t.Fatalf("expected success after retry, got: %v", err)
 	}
@@ -168,7 +168,7 @@ func TestGet_GivesUpAfterMaxRetries(t *testing.T) {
 	defer func() { setBaseURL(origBase) }()
 	setBaseURL(srv.URL)
 
-	_, err := c.GetDevices()
+	_, err := c.GetDevices(t.Context())
 	if err == nil {
 		t.Fatal("expected error after max retries")
 	}
@@ -204,7 +204,7 @@ func TestGetACStates(t *testing.T) {
 	defer func() { setBaseURL(origBase) }()
 	setBaseURL(srv.URL)
 
-	states, err := c.GetACStates("abc123", 20)
+	states, err := c.GetACStates(t.Context(), "abc123", 20)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

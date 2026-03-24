@@ -90,7 +90,7 @@ func main() {
 	m := metrics.New()
 
 	if cfg.once {
-		captureAll(m, db, sensiboKey, purpleairHosts, weatherClient, cfg.verbose)
+		captureAll(context.Background(), m, db, sensiboKey, purpleairHosts, weatherClient, cfg.verbose)
 		return
 	}
 
@@ -110,7 +110,7 @@ func main() {
 	}()
 
 	log.Printf("Logging to database every %s (Ctrl+C to stop)", cfg.interval)
-	captureAll(m, db, sensiboKey, purpleairHosts, weatherClient, cfg.verbose)
+	captureAll(context.Background(), m, db, sensiboKey, purpleairHosts, weatherClient, cfg.verbose)
 
 	ticker := time.NewTicker(cfg.interval)
 	defer ticker.Stop()
@@ -121,7 +121,7 @@ func main() {
 	for {
 		select {
 		case <-ticker.C:
-			captureAll(m, db, sensiboKey, purpleairHosts, weatherClient, cfg.verbose)
+			captureAll(context.Background(), m, db, sensiboKey, purpleairHosts, weatherClient, cfg.verbose)
 		case <-sig:
 			log.Println("Stopping.")
 			return
@@ -129,30 +129,30 @@ func main() {
 	}
 }
 
-func captureAll(m *metrics.Metrics, db *store.Store, sensiboKey string, purpleairHosts []string, weatherClient *openmeteo.Client, verbose bool) {
+func captureAll(ctx context.Context, m *metrics.Metrics, db *store.Store, sensiboKey string, purpleairHosts []string, weatherClient *openmeteo.Client, verbose bool) {
 	now := time.Now()
 
 	if sensiboKey != "" {
-		captureSensibo(m, db, sensiboKey, now, verbose)
-		captureACStates(db, sensiboKey, verbose)
+		captureSensibo(ctx, m, db, sensiboKey, now, verbose)
+		captureACStates(ctx, db, sensiboKey, verbose)
 	}
 	if len(purpleairHosts) > 0 {
-		capturePurpleAir(m, db, purpleairHosts, now, verbose)
+		capturePurpleAir(ctx, m, db, purpleairHosts, now, verbose)
 	}
 	if weatherClient != nil {
-		captureWeather(db, weatherClient, verbose)
+		captureWeather(ctx, db, weatherClient, verbose)
 	}
 }
 
-func captureSensibo(m *metrics.Metrics, db *store.Store, apiKey string, now time.Time, verbose bool) {
+func captureSensibo(ctx context.Context, m *metrics.Metrics, db *store.Store, apiKey string, now time.Time, verbose bool) {
 	client := sensibo.NewClient(apiKey)
-	devices, err := client.GetDevices()
+	devices, err := client.GetDevices(ctx)
 	if err != nil {
 		log.Printf("Sensibo error: %v", err)
 		return
 	}
 	for _, dev := range devices {
-		measurements, err := client.GetHistoricalMeasurements(dev.ID, 1)
+		measurements, err := client.GetHistoricalMeasurements(ctx, dev.ID, 1)
 		if err != nil {
 			log.Printf("Sensibo %s (%s): %v", dev.Room.Name, dev.ID, err)
 			continue
@@ -185,10 +185,10 @@ func captureSensibo(m *metrics.Metrics, db *store.Store, apiKey string, now time
 	}
 }
 
-func capturePurpleAir(m *metrics.Metrics, db *store.Store, hosts []string, now time.Time, verbose bool) {
+func capturePurpleAir(ctx context.Context, m *metrics.Metrics, db *store.Store, hosts []string, now time.Time, verbose bool) {
 	client := purpleair.NewClient(hosts)
 	for _, host := range hosts {
-		reading, err := client.Fetch(host)
+		reading, err := client.Fetch(ctx, host)
 		if err != nil {
 			log.Printf("PurpleAir %s: %v", host, err)
 			continue
@@ -221,15 +221,15 @@ func capturePurpleAir(m *metrics.Metrics, db *store.Store, hosts []string, now t
 	}
 }
 
-func captureACStates(db *store.Store, apiKey string, verbose bool) {
+func captureACStates(ctx context.Context, db *store.Store, apiKey string, verbose bool) {
 	client := sensibo.NewClient(apiKey)
-	devices, err := client.GetDevices()
+	devices, err := client.GetDevices(ctx)
 	if err != nil {
 		log.Printf("Sensibo error (AC states): %v", err)
 		return
 	}
 	for _, dev := range devices {
-		states, err := client.GetACStates(dev.ID, 20)
+		states, err := client.GetACStates(ctx, dev.ID, 20)
 		if err != nil {
 			log.Printf("Sensibo AC states %s (%s): %v", dev.Room.Name, dev.ID, err)
 			continue
@@ -284,8 +284,8 @@ func printVerboseRecord(rec logger.Record) {
 	}
 }
 
-func captureWeather(db *store.Store, client *openmeteo.Client, verbose bool) {
-	reading, err := client.Fetch()
+func captureWeather(ctx context.Context, db *store.Store, client *openmeteo.Client, verbose bool) {
+	reading, err := client.Fetch(ctx)
 	if err != nil {
 		log.Printf("Weather error: %v", err)
 		return
