@@ -10,8 +10,12 @@ RUN npm run build
 # Stage 2: Build the Go binary (embeds rooms.html)
 FROM golang:1.25-bookworm AS builder
 WORKDIR /app
+# Cache module downloads separately from source so they survive source-only changes
+COPY go.mod go.sum ./
+RUN go mod download
 COPY . .
-# Overwrite any stale rooms.html from the build context with the freshly built one
+# rooms.html must come after COPY . . — it is excluded from the build context
+# (see .dockerignore) and is supplied here from the frontend stage for //go:embed
 COPY --from=frontend /app/rooms.html .
 RUN go build -buildvcs=false -o airquality .
 
