@@ -36,9 +36,10 @@ Multi-stage build with three stages:
 - The build script runs `vite build ... && cp dist-rooms/rooms.html ../rooms.html`, so the output lands at `/app/rooms.html` (one level up, at the repo root inside the container)
 - Output: `/app/rooms.html` (single-file bundle)
 
-**Stage 2 — builder** (`golang:1.25-bookworm`)
-- `WORKDIR /app`; copy Go source files and `go.mod`/`go.sum`
-- Copy `/app/rooms.html` from the frontend stage (required by `//go:embed rooms.html`)
+**Stage 2 — builder** (`golang:1.25-bookworm` — verify this tag exists on Docker Hub; fall back to `golang:1.25.0-bookworm` or the nearest available patch tag)
+- `WORKDIR /app`
+- `COPY . .` to bring in all Go source files, `go.mod`, `go.sum`
+- Then `COPY --from=frontend /app/rooms.html .` — this must come *after* the broad copy so it overwrites any stale `rooms.html` from the build context
 - Run `go build -buildvcs=false -o airquality .`
 - Output: `airquality` binary
 
@@ -59,7 +60,7 @@ Triggers on push to `main`.
 Steps:
 1. `actions/checkout@v4`
 2. `docker/login-action` — log in to `ghcr.io` using the built-in `GITHUB_TOKEN` (no secrets to configure)
-3. `docker/metadata-action` — generate tags:
+3. `docker/metadata-action` — generate tags using `images: ghcr.io/${{ github.repository }}` (the `github.repository` context is automatically lowercased, which is required by ghcr.io):
    - `ghcr.io/<owner>/<repo>:latest`
    - `ghcr.io/<owner>/<repo>:<short-sha>`
 4. `docker/build-push-action` — build `Dockerfile.prod` and push both tags
