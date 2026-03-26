@@ -31,13 +31,14 @@ go build -buildvcs=false -o airquality .
 Multi-stage build with three stages:
 
 **Stage 1 — frontend** (`node:22-bookworm-slim`)
-- Copy `frontend/` directory
+- `WORKDIR /app/frontend`; copy `frontend/` directory into it
 - Run `npm ci` then `npm run build`
-- Output: `rooms.html` (single-file bundle)
+- The build script runs `vite build ... && cp dist-rooms/rooms.html ../rooms.html`, so the output lands at `/app/rooms.html` (one level up, at the repo root inside the container)
+- Output: `/app/rooms.html` (single-file bundle)
 
-**Stage 2 — builder** (`golang:1.24-bookworm`)
-- Copy Go source files and `go.mod`/`go.sum`
-- Copy `rooms.html` from the frontend stage
+**Stage 2 — builder** (`golang:1.25-bookworm`)
+- `WORKDIR /app`; copy Go source files and `go.mod`/`go.sum`
+- Copy `/app/rooms.html` from the frontend stage (required by `//go:embed rooms.html`)
 - Run `go build -buildvcs=false -o airquality .`
 - Output: `airquality` binary
 
@@ -63,7 +64,23 @@ Steps:
    - `ghcr.io/<owner>/<repo>:<short-sha>`
 4. `docker/build-push-action` — build `Dockerfile.prod` and push both tags
 
-No additional repository secrets are required; `GITHUB_TOKEN` is provided automatically by GitHub Actions.
+No additional repository secrets are required; `GITHUB_TOKEN` is provided automatically by GitHub Actions. The workflow job must declare explicit permissions to ensure it works regardless of the repo's default token settings:
+
+```yaml
+permissions:
+  contents: read
+  packages: write
+```
+
+## Additional Files
+
+### `.dockerignore`
+
+A `.dockerignore` must be created to exclude large/irrelevant paths from the build context:
+- `node_modules/`, `frontend/node_modules/`
+- `frontend/dist-rooms/`
+- `tmp/`, `.git/`
+- The existing root-level `airquality` binary (stale local build artifact)
 
 ## What Is Not In Scope
 
