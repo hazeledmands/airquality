@@ -148,7 +148,7 @@ docker run --rm \
   airquality:local
 ```
 
-The image runs as a non-root user and expects all configuration via environment variables (see [Environment Variables](#environment-variables)).
+The image runs as a non-root user and expects all configuration via environment variables (see [Setup](#setup)).
 
 ## Building
 
