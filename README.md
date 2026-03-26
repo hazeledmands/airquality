@@ -128,6 +128,28 @@ The wrapper script (`bin/dev-container`) handles UID/GID mapping so files create
 
 Environment variables (`SENSIBO_API_KEY`, `PURPLEAIR_HOSTS`, etc.) are passed through from the host. The app port is mapped at `50234` to avoid conflicting with a production instance on `50233`.
 
+## Docker
+
+A production image is built automatically on every push to `main` and published to GitHub Container Registry:
+
+```
+ghcr.io/hazeledmands/airquality:latest
+ghcr.io/hazeledmands/airquality:<short-sha>
+```
+
+To build locally:
+
+```bash
+docker build -f Dockerfile.prod -t airquality:local .
+docker run --rm \
+  -e DATABASE_URL="postgres://user:pass@host/db" \
+  -e SENSIBO_API_KEY="..." \
+  -p 50234:50233 \
+  airquality:local
+```
+
+The image runs as a non-root user and expects all configuration via environment variables (see [Environment Variables](#environment-variables)).
+
 ## Building
 
 The dashboard frontend lives in `frontend/` as ES modules bundled by Vite into single-file HTML pages (`dashboard.html` and `rooms.html`) that Go embeds at compile time.
