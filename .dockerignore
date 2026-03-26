@@ -10,6 +10,7 @@ dist-rooms
 
 # Go build output
 airquality
+rooms.html
 
 # Dev/test artifacts
 tmp
