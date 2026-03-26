@@ -1,1 +1,14 @@
-*.png
+# Git
+.git
+.gitignore
+
+# Node dependencies and build output
+node_modules
+frontend/node_modules
+frontend/dist-rooms
+
+# Go build output
+airquality
+
+# Dev/test artifacts
+tmp
