@@ -1,8 +1,9 @@
-import { REFRESH_MS, cToF, filterByRange, buildRoomDatasets, computeStatus, getAspectRatio, makeWeatherTempSeries, makeUVSeries, extractDaylightPairs, applyNewAnnotation, removeAnnotation } from './data.js';
+import { REFRESH_MS, cToF, filterByRange, buildRoomDatasets, computeStatus, getAspectRatio, makeWeatherTempSeries, makeUVSeries, extractDaylightPairs, applyNewAnnotation, removeAnnotation, toLocalInput } from './data.js';
 import { CHART_ANIMATION_MS, Y_AXIS_PADDING } from './config.js';
 import { xTickCallback } from './charts.js';
 import { combinedChartOpts, buildCombinedDatasets } from './room-charts.js';
 import { crosshairPlugin, registerChart, unregisterChart } from './crosshair.js';
+import { dragZoomPlugin, registerChart as registerZoomChart, unregisterChart as unregisterZoomChart, setZoomCallback } from './drag-zoom.js';
 import { maximaLabelsPlugin, setMaximaLabelsEnabled } from './maxima-labels.js';
 import { humidityHighlightPlugin, setHumidityHighlightEnabled } from './humidity-highlight.js';
 import { daylightPlugin, setDaylightPairs } from './daylight-plugin.js';
@@ -14,6 +15,7 @@ import { annotationsPlugin, setAnnotations, setupAnnotationUI } from './annotati
 import { getParam, setParam } from './url-state.js';
 
 Chart.register(crosshairPlugin);
+Chart.register(dragZoomPlugin);
 Chart.register(maximaLabelsPlugin);
 Chart.register(humidityHighlightPlugin);
 Chart.register(daylightPlugin);
@@ -25,6 +27,7 @@ let cleanupAnnotationUI = null;
 let reorder = null;
 let outdoorTempEnabled = false;
 let currentWeather = [];
+let skipAnimation = false; // set true before zoom-triggered updateCharts to avoid filler plugin errors
 
 
 function weatherChartOpts(ar) {
@@ -101,6 +104,7 @@ function buildWeatherCard(weather, ar) {
     });
 
     registerChart(chart);
+    registerZoomChart(chart);
     roomCharts.push({ room: '__weather__', chart });
     return section;
 }
@@ -139,6 +143,7 @@ function buildRoomDOM(rooms) {
     if (cleanupAnnotationUI) { cleanupAnnotationUI(); cleanupAnnotationUI = null; }
     for (const rc of roomCharts) {
         unregisterChart(rc.chart);
+        unregisterZoomChart(rc.chart);
     }
     roomCharts = [];
 
@@ -179,6 +184,7 @@ function buildRoomDOM(rooms) {
         });
 
         registerChart(chart);
+        registerZoomChart(chart);
         container.appendChild(section);
         roomCharts.push({ room: room.name, chart });
     }
@@ -223,7 +229,7 @@ function updateCharts(data) {
         document.getElementById('status').textContent = 'No data yet.';
         const container = document.getElementById('rooms-container');
         container.innerHTML = '<div class="no-data">Waiting for first sensor reading&hellip;</div>';
-        for (const rc of roomCharts) unregisterChart(rc.chart);
+        for (const rc of roomCharts) { unregisterChart(rc.chart); unregisterZoomChart(rc.chart); }
         roomCharts = [];
         return;
     }
@@ -252,7 +258,9 @@ function updateCharts(data) {
     syncXAxes(allCharts, computeXRange(allCharts));
     syncYAxes(allCharts, 'y',  computeYRange(allCharts, 'y',  Y_AXIS_PADDING));
     syncYAxes(allCharts, 'y2', computeYRange(allCharts, 'y2', Y_AXIS_PADDING));
-    for (const rc of roomCharts) rc.chart.update();
+    const updateMode = skipAnimation ? 'none' : undefined;
+    skipAnimation = false;
+    for (const rc of roomCharts) rc.chart.update(updateMode);
 
     setAnnotations(data.annotations || []);
     updateLatestValues(rooms);
@@ -268,11 +276,25 @@ window.addEventListener('resize', () => {
     }
 });
 
-const { setRangeDefaults } = setupDateRange({
+const { setRangeDefaults, applyFilter } = setupDateRange({
     getDataFn: () => allData,
     onFilter: (from, to) => {
         if (allData) updateCharts(filterByRange(allData, from, to));
     },
+});
+
+setZoomCallback(({ min, max }) => {
+    document.getElementById('rangeFrom').value = toLocalInput(new Date(min));
+    document.getElementById('rangeTo').value = toLocalInput(new Date(max));
+    // Use no-animation mode for zoom updates: the mouse stays over the chart after
+    // drag-release, so Chart.js will fire a mousemove-triggered draw immediately after
+    // chart.update(). With a 300ms animation queued, filler plugin runs on partially-
+    // initialised metas in those intermediate frames and throws "cannot read _clip".
+    // Skipping animation goes straight to the final state, avoiding this.
+    skipAnimation = true;
+    requestAnimationFrame(() => {
+        document.getElementById('rangeFrom').dispatchEvent(new Event('change'));
+    });
 });
 
 async function saveAnnotation(timestamp, note, room) {
