@@ -45,6 +45,9 @@ function endDrag(chart, clientX) {
 
     const zoomed = dx >= DRAG_THRESHOLD_PX && onZoomCallback;
     if (zoomed) {
+        // Suppress the click event the browser fires after mouseup so that the
+        // annotation popover doesn't open at the end of a drag-zoom gesture.
+        canvas.addEventListener('click', (e) => e.stopImmediatePropagation(), { capture: true, once: true });
         onZoomCallback({
             min: Math.min(dragState.startT, dragState.currentT),
             max: Math.max(dragState.startT, dragState.currentT),
