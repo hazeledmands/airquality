@@ -10,6 +10,15 @@ export const METRIC_COLORS = {
     acState:  '#6b7280', // gray
 };
 
+export const PARTICLE_BINS = [
+    { field: 'p03',  label: 'P\u22650.3\u00b5m', color: '#67e8f9' },
+    { field: 'p05',  label: 'P\u22650.5\u00b5m', color: '#86efac' },
+    { field: 'p10',  label: 'P\u22651.0\u00b5m', color: '#fde68a' },
+    { field: 'p25',  label: 'P\u22652.5\u00b5m', color: '#fca5a5' },
+    { field: 'p50',  label: 'P\u22655.0\u00b5m', color: '#f87171' },
+    { field: 'p100', label: 'P\u226510\u00b5m',  color: '#dc2626' },
+];
+
 export function isIndoorRoom(room) {
     return !/outside/i.test(room.name);
 }
@@ -17,6 +26,7 @@ export function isIndoorRoom(room) {
 export function combinedChartOpts(ar, room) {
     const hasPM = room.pm.length > 0;
     const hasAC = room.acState.length > 0;
+    const hasParticles = room.particles && PARTICLE_BINS.some(b => room.particles[b.field].length > 0);
     const indoor = isIndoorRoom(room);
 
     const opts = {
@@ -77,6 +87,16 @@ export function combinedChartOpts(ar, room) {
             display: false,
             min: -0.05,
             max: 1.05,
+        };
+    }
+
+    if (hasParticles) {
+        opts.scales.y4 = {
+            type: 'linear',
+            position: 'right',
+            title: { display: true, text: '#/dL', color: '#888', font: { size: 11 } },
+            ticks: { color: '#888' },
+            grid: { drawOnChartArea: false },
         };
     }
 
@@ -145,6 +165,21 @@ export function buildCombinedDatasets(room, { outdoorTempEnabled = false, curren
             stepped: true,
             tension: 0,
         });
+    }
+
+    if (room.particles) {
+        for (const bin of PARTICLE_BINS) {
+            for (const ds of room.particles[bin.field]) {
+                datasets.push({
+                    ...ds,
+                    label: bin.label,
+                    yAxisID: 'y4',
+                    borderColor: bin.color,
+                    fill: false,
+                    peakUnit: '#/dL',
+                });
+            }
+        }
     }
 
     if (outdoorTempEnabled && currentWeather.length > 0 && isIndoorRoom(room)) {

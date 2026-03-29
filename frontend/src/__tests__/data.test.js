@@ -341,6 +341,37 @@ describe('buildRoomDatasets', () => {
         expect(outside.pm).toHaveLength(1);
     });
 
+    it('includes particle bin series only for purpleair sensors', () => {
+        const rooms = buildRoomDatasets(sensors, acStates);
+        const office = rooms.find(r => r.name === 'Office');
+        const outside = rooms.find(r => r.name === 'Outside');
+        expect(office.particles.p03).toHaveLength(0);
+        expect(outside.particles.p03).toHaveLength(1);
+    });
+
+    it('populates all 6 particle bin arrays for purpleair sensors', () => {
+        const rooms = buildRoomDatasets(sensors, acStates);
+        const outside = rooms.find(r => r.name === 'Outside');
+        for (const field of ['p03', 'p05', 'p10', 'p25', 'p50', 'p100']) {
+            expect(outside.particles[field]).toHaveLength(1);
+        }
+    });
+
+    it('particle series data maps to correct field values', () => {
+        const purpleairSensor = {
+            source: 'purpleair',
+            sensor_id: 'x',
+            location: 'Yard',
+            readings: [
+                { timestamp: '2026-03-17T10:00:00Z', p03: 500, p05: 200, p10: 80, p25: 30, p50: 5, p100: 1 },
+            ],
+        };
+        const rooms = buildRoomDatasets([purpleairSensor]);
+        const yard = rooms.find(r => r.name === 'Yard');
+        expect(yard.particles.p03[0].data[0].y).toBe(500);
+        expect(yard.particles.p100[0].data[0].y).toBe(1);
+    });
+
     it('attaches AC state to the matching room', () => {
         const rooms = buildRoomDatasets(sensors, acStates);
         const office = rooms.find(r => r.name === 'Office');

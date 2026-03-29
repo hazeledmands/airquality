@@ -73,6 +73,8 @@ export function toLocalInput(d) {
 }
 
 
+const PARTICLE_FIELDS = ['p03', 'p05', 'p10', 'p25', 'p50', 'p100'];
+
 export function buildRoomDatasets(sensors, acStates = []) {
     const roomMap = new Map();
     const makeRoom = (name, colorIdx) => ({
@@ -83,6 +85,7 @@ export function buildRoomDatasets(sensors, acStates = []) {
         dewpoint: [],
         pm: [],
         acState: [],
+        particles: Object.fromEntries(PARTICLE_FIELDS.map(f => [f, []])),
     });
 
     sensors.forEach((s, i) => {
@@ -94,6 +97,11 @@ export function buildRoomDatasets(sensors, acStates = []) {
         room.dewpoint.push(makeSeries(s, 'dewpoint_c', i, cToF));
         if (s.source === 'purpleair' || s.readings.some(r => r.pm25 > 0)) {
             room.pm.push(makeSeries(s, 'pm25', i));
+        }
+        if (s.source === 'purpleair') {
+            for (const field of PARTICLE_FIELDS) {
+                room.particles[field].push(makeSeries(s, field, i));
+            }
         }
     });
 

@@ -12,6 +12,8 @@ vi.mock('../data.js', () => ({
     }),
 }));
 
+const emptyParticles = { p03: [], p05: [], p10: [], p25: [], p50: [], p100: [] };
+
 function makeRoom(overrides = {}) {
     return {
         name: 'Bedroom',
@@ -20,6 +22,7 @@ function makeRoom(overrides = {}) {
         humidity: [],
         pm: [],
         acState: [],
+        particles: emptyParticles,
         ...overrides,
     };
 }
@@ -70,6 +73,17 @@ describe('combinedChartOpts', () => {
     it('omits y3 scale when room has no AC data', () => {
         const opts = combinedChartOpts(2, makeRoom());
         expect(opts.scales.y3).toBeUndefined();
+    });
+
+    it('adds y4 scale when room has particle data', () => {
+        const room = makeRoom({ particles: { ...emptyParticles, p03: [{ data: [] }] } });
+        const opts = combinedChartOpts(2, room);
+        expect(opts.scales.y4).toBeDefined();
+    });
+
+    it('omits y4 scale when room has no particle data', () => {
+        const opts = combinedChartOpts(2, makeRoom());
+        expect(opts.scales.y4).toBeUndefined();
     });
 
     it('enables humidityHighlight for indoor rooms', () => {
@@ -163,5 +177,30 @@ describe('buildCombinedDatasets', () => {
         const room = makeRoom({ name: 'Bedroom' });
         const ds = buildCombinedDatasets(room, { outdoorTempEnabled: true, currentWeather: [] });
         expect(ds.some(d => d.label === 'Outside Temp')).toBe(false);
+    });
+
+    it('maps particle bins to y4 axis', () => {
+        const room = makeRoom({ particles: { ...emptyParticles, p03: [{ data: [{ x: 1, y: 500 }] }] } });
+        const ds = buildCombinedDatasets(room);
+        const particleDs = ds.filter(d => d.yAxisID === 'y4');
+        expect(particleDs).toHaveLength(1);
+        expect(particleDs[0].label).toBe('P≥0.3µm');
+    });
+
+    it('maps all 6 particle bins when present', () => {
+        const particles = Object.fromEntries(
+            ['p03', 'p05', 'p10', 'p25', 'p50', 'p100'].map(f => [f, [{ data: [] }]])
+        );
+        const room = makeRoom({ particles });
+        const ds = buildCombinedDatasets(room);
+        const particleDs = ds.filter(d => d.yAxisID === 'y4');
+        expect(particleDs).toHaveLength(6);
+    });
+
+    it('particle datasets have fill false', () => {
+        const room = makeRoom({ particles: { ...emptyParticles, p03: [{ data: [] }] } });
+        const ds = buildCombinedDatasets(room);
+        const particleDs = ds.find(d => d.yAxisID === 'y4');
+        expect(particleDs.fill).toBe(false);
     });
 });
