@@ -92,6 +92,12 @@ type reading struct {
 	PM10      float64 `json:"pm10"`
 	AQI       float64 `json:"aqi"`
 	VOC       float64 `json:"voc"`
+	P03       float64 `json:"p03"`
+	P05       float64 `json:"p05"`
+	P10       float64 `json:"p10"`
+	P25       float64 `json:"p25"`
+	P50       float64 `json:"p50"`
+	P100      float64 `json:"p100"`
 }
 
 type acStateData struct {
@@ -136,6 +142,12 @@ func groupReadings(records []logger.Record) []sensorData {
 			PM10:      r.PM10,
 			AQI:       r.AQI,
 			VOC:       r.VOC,
+			P03:       r.P03,
+			P05:       r.P05,
+			P10:       r.P10,
+			P25:       r.P25,
+			P50:       r.P50,
+			P100:      r.P100,
 		})
 	}
 	result := make([]sensorData, 0, len(order))

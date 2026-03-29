@@ -173,6 +173,18 @@ func TestSummary(t *testing.T) {
 		PM10CF1B: 3.40,
 		PM1CF1:   1.13,
 		PM1CF1B:  2.03,
+		P03:      481.50,
+		P03B:     524.59,
+		P05:      140.87,
+		P05B:     153.38,
+		P10:      17.27,
+		P10B:     18.97,
+		P25:      1.23,
+		P25B:     1.81,
+		P50:      1.10,
+		P50B:     0.66,
+		P100:     0.87,
+		P100B:    0.41,
 	}
 
 	s := r.Summary()
@@ -204,5 +216,24 @@ func TestSummary(t *testing.T) {
 	wantAQI := (7.0 + 12.0) / 2
 	if math.Abs(s.AQI-wantAQI) > 0.01 {
 		t.Errorf("AQI = %.1f, want %.1f", s.AQI, wantAQI)
+	}
+
+	// Particle count bins (average of A and B channels)
+	pcTests := []struct {
+		name string
+		got  float64
+		want float64
+	}{
+		{"P03", s.P03, (481.50 + 524.59) / 2},
+		{"P05", s.P05, (140.87 + 153.38) / 2},
+		{"P10", s.P10, (17.27 + 18.97) / 2},
+		{"P25", s.P25, (1.23 + 1.81) / 2},
+		{"P50", s.P50, (1.10 + 0.66) / 2},
+		{"P100", s.P100, (0.87 + 0.41) / 2},
+	}
+	for _, tc := range pcTests {
+		if math.Abs(tc.got-tc.want) > 0.01 {
+			t.Errorf("%s = %.2f, want %.2f", tc.name, tc.got, tc.want)
+		}
 	}
 }

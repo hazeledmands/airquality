@@ -94,6 +94,14 @@ type SensorSummary struct {
 	PM25A float64
 	PM25B float64
 
+	// Particle count bins (average of A and B, per deciliter)
+	P03  float64 // ≥0.3 µm
+	P05  float64 // ≥0.5 µm
+	P10  float64 // ≥1.0 µm
+	P25  float64 // ≥2.5 µm
+	P50  float64 // ≥5.0 µm
+	P100 float64 // ≥10.0 µm
+
 	// Gas/VOC (BME680, kOhm)
 	Gas680 float64
 }
@@ -119,6 +127,12 @@ func (r *SensorReading) Summary() SensorSummary {
 		AQI:       (r.PM25AQI + r.PM25AQIB) / 2,
 		PM25A:     r.PM25CF1,
 		PM25B:     r.PM25CF1B,
+		P03:       (r.P03 + r.P03B) / 2,
+		P05:       (r.P05 + r.P05B) / 2,
+		P10:       (r.P10 + r.P10B) / 2,
+		P25:       (r.P25 + r.P25B) / 2,
+		P50:       (r.P50 + r.P50B) / 2,
+		P100:      (r.P100 + r.P100B) / 2,
 		Gas680:    r.Gas680,
 	}
 }

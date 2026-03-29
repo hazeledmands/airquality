@@ -41,13 +41,16 @@ func (s *Store) InsertReading(ctx context.Context, r logger.Record) error {
 		INSERT INTO readings
 			(timestamp, source, sensor_id, location,
 			 temp_c, humidity, dewpoint_c,
-			 pressure, pm1, pm25, pm10, aqi, voc)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+			 pressure, pm1, pm25, pm10, aqi, voc,
+			 p03, p05, p10, p25, p50, p100)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)
 		ON CONFLICT (source, sensor_id, minute_epoch(timestamp)) DO NOTHING`,
 		r.Timestamp, r.Source, r.SensorID, r.Location,
 		r.TempC, r.Humidity, r.DewPointC,
 		nullFloat(r.Pressure), nullFloat(r.PM1), nullFloat(r.PM25),
 		nullFloat(r.PM10), nullFloat(r.AQI), nullFloat(r.VOC),
+		nullFloat(r.P03), nullFloat(r.P05), nullFloat(r.P10),
+		nullFloat(r.P25), nullFloat(r.P50), nullFloat(r.P100),
 	)
 	if err != nil {
 		return fmt.Errorf("insert reading: %w", err)
@@ -158,7 +161,8 @@ func (s *Store) QueryReadings(ctx context.Context, from, to time.Time) ([]logger
 	rows, err := s.pool.Query(ctx, `
 		SELECT timestamp, source, sensor_id, location,
 		       temp_c, humidity, dewpoint_c,
-		       pressure, pm1, pm25, pm10, aqi, voc
+		       pressure, pm1, pm25, pm10, aqi, voc,
+		       p03, p05, p10, p25, p50, p100
 		FROM readings
 		WHERE timestamp >= $1 AND timestamp < $2
 		ORDER BY timestamp ASC`,
@@ -173,10 +177,12 @@ func (s *Store) QueryReadings(ctx context.Context, from, to time.Time) ([]logger
 	for rows.Next() {
 		var r logger.Record
 		var pressure, pm1, pm25, pm10, aqi, voc *float64
+		var p03, p05, p10, p25, p50, p100 *float64
 		if err := rows.Scan(
 			&r.Timestamp, &r.Source, &r.SensorID, &r.Location,
 			&r.TempC, &r.Humidity, &r.DewPointC,
 			&pressure, &pm1, &pm25, &pm10, &aqi, &voc,
+			&p03, &p05, &p10, &p25, &p50, &p100,
 		); err != nil {
 			return nil, fmt.Errorf("scan reading row: %w", err)
 		}
@@ -197,6 +203,24 @@ func (s *Store) QueryReadings(ctx context.Context, from, to time.Time) ([]logger
 		}
 		if voc != nil {
 			r.VOC = *voc
+		}
+		if p03 != nil {
+			r.P03 = *p03
+		}
+		if p05 != nil {
+			r.P05 = *p05
+		}
+		if p10 != nil {
+			r.P10 = *p10
+		}
+		if p25 != nil {
+			r.P25 = *p25
+		}
+		if p50 != nil {
+			r.P50 = *p50
+		}
+		if p100 != nil {
+			r.P100 = *p100
 		}
 		result = append(result, r)
 	}
@@ -339,13 +363,16 @@ func (s *Store) BatchInsertReadings(ctx context.Context, records []logger.Record
 			r.TempC, r.Humidity, r.DewPointC,
 			nullFloat(r.Pressure), nullFloat(r.PM1), nullFloat(r.PM25),
 			nullFloat(r.PM10), nullFloat(r.AQI), nullFloat(r.VOC),
+			nullFloat(r.P03), nullFloat(r.P05), nullFloat(r.P10),
+			nullFloat(r.P25), nullFloat(r.P50), nullFloat(r.P100),
 		}
 	}
 	_, err := s.pool.CopyFrom(ctx,
 		pgx.Identifier{"readings"},
 		[]string{"timestamp", "source", "sensor_id", "location",
 			"temp_c", "humidity", "dewpoint_c",
-			"pressure", "pm1", "pm25", "pm10", "aqi", "voc"},
+			"pressure", "pm1", "pm25", "pm10", "aqi", "voc",
+			"p03", "p05", "p10", "p25", "p50", "p100"},
 		pgx.CopyFromRows(rows),
 	)
 	if err != nil {

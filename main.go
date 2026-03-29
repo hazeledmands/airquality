@@ -208,6 +208,12 @@ func capturePurpleAir(ctx context.Context, m *metrics.Metrics, db *store.Store, 
 			PM10:      s.PM10,
 			AQI:       s.AQI,
 			VOC:       s.Gas680,
+			P03:       s.P03,
+			P05:       s.P05,
+			P10:       s.P10,
+			P25:       s.P25,
+			P50:       s.P50,
+			P100:      s.P100,
 		}
 		if err := db.InsertReading(context.Background(), rec); err != nil {
 			log.Printf("DB write error: %v", err)
@@ -281,6 +287,12 @@ func printVerboseRecord(rec logger.Record) {
 		fmt.Printf("    PM2.5:       %.1f µg/m³\n", rec.PM25)
 		fmt.Printf("    PM10:        %.1f µg/m³\n", rec.PM10)
 		fmt.Printf("    AQI:         %.0f\n", rec.AQI)
+		fmt.Printf("    ≥0.3µm:      %.1f /dL\n", rec.P03)
+		fmt.Printf("    ≥0.5µm:      %.1f /dL\n", rec.P05)
+		fmt.Printf("    ≥1.0µm:      %.1f /dL\n", rec.P10)
+		fmt.Printf("    ≥2.5µm:      %.1f /dL\n", rec.P25)
+		fmt.Printf("    ≥5.0µm:      %.1f /dL\n", rec.P50)
+		fmt.Printf("    ≥10µm:       %.1f /dL\n", rec.P100)
 	}
 }
 
