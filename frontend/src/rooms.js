@@ -2,7 +2,7 @@ import { REFRESH_MS, cToF, filterByRange, buildRoomDatasets, computeStatus, getA
 import { CHART_ANIMATION_MS, Y_AXIS_PADDING } from './config.js';
 import { xTickCallback } from './charts.js';
 import { combinedChartOpts, buildCombinedDatasets, PARTICLE_BINS } from './room-charts.js';
-import { renderHeatmap } from './particle-heatmap.js';
+import { renderHeatmap, setupHeatmapInteraction } from './particle-heatmap.js';
 import { crosshairPlugin, registerChart, unregisterChart } from './crosshair.js';
 import { dragZoomPlugin, registerChart as registerZoomChart, unregisterChart as unregisterZoomChart, setZoomCallback } from './drag-zoom.js';
 import { maximaLabelsPlugin, setMaximaLabelsEnabled } from './maxima-labels.js';
@@ -197,6 +197,14 @@ function buildRoomDOM(rooms) {
 
         container.appendChild(section);
         roomCharts.push({ room: room.name, chart, heatmapCanvas, roomData: null });
+
+        if (heatmapCanvas) {
+            const rc = roomCharts[roomCharts.length - 1];
+            setupHeatmapInteraction(heatmapCanvas, () => ({
+                particles: rc.roomData?.particles,
+                xRange: { min: rc.chart.options.scales.x.min, max: rc.chart.options.scales.x.max },
+            }));
+        }
     }
 
     if (reorder) reorder.bindItems();

@@ -32,7 +32,7 @@ export function renderHeatmap(canvas, particles, xRange) {
 
         const y = row * (ROW_H + GAP);
 
-        ctx.fillStyle = '#555';
+        ctx.fillStyle = '#888';
         ctx.font = '9px monospace';
         ctx.textAlign = 'right';
         ctx.textBaseline = 'middle';
@@ -52,6 +52,79 @@ export function renderHeatmap(canvas, particles, xRange) {
             ctx.fillStyle = colorForIntensity(bin.color, intensity);
             ctx.fillRect(x0, y, Math.max(1, x1 - x0), ROW_H);
         }
+    });
+}
+
+export function findClosestPoint(points, t) {
+    if (!points || points.length === 0) return null;
+    return points.reduce((best, pt) => {
+        return Math.abs(+new Date(pt.x) - t) < Math.abs(+new Date(best.x) - t) ? pt : best;
+    });
+}
+
+let _tooltip = null;
+
+function getTooltip() {
+    if (_tooltip) return _tooltip;
+    _tooltip = document.createElement('div');
+    _tooltip.style.cssText = [
+        'position:fixed', 'z-index:9999', 'pointer-events:none', 'display:none',
+        'background:#1e1e30', 'border:1px solid #333', 'border-radius:4px',
+        'padding:6px 10px', 'font-size:11px', 'line-height:1.6',
+        'color:#aaa', 'white-space:nowrap',
+    ].join(';');
+    document.body.appendChild(_tooltip);
+    return _tooltip;
+}
+
+export function setupHeatmapInteraction(canvas, getState) {
+    const tooltip = getTooltip();
+
+    canvas.addEventListener('mousemove', (e) => {
+        const { particles, xRange } = getState();
+        if (!particles || !xRange || xRange.min == null) return;
+
+        const rect = canvas.getBoundingClientRect();
+        const cssX = e.clientX - rect.left;
+        const plotW = rect.width - LABEL_W;
+        if (cssX < LABEL_W) { tooltip.style.display = 'none'; return; }
+
+        const ratio = (cssX - LABEL_W) / plotW;
+        const t = xRange.min + ratio * (xRange.max - xRange.min);
+
+        // Find the closest timestamp using p03 as reference
+        const refPoints = (particles.p03 || []).flatMap(s => s.data);
+        const closest = findClosestPoint(refPoints, t);
+        if (!closest) { tooltip.style.display = 'none'; return; }
+        const closestT = +new Date(closest.x);
+
+        // Look up each bin's value at that timestamp
+        const rows = PARTICLE_BINS.map(bin => {
+            const pts = (particles[bin.field] || []).flatMap(s => s.data);
+            const pt = pts.find(p => +new Date(p.x) === closestT);
+            const val = pt != null ? pt.y.toLocaleString('en', { maximumFractionDigits: 0 }) : '—';
+            return `<div><span style="color:${bin.color}">\u25a0</span> ${bin.rangeLabel} <span style="color:#ccc;float:right;margin-left:12px">${val}</span></div>`;
+        }).join('');
+
+        const title = new Date(closestT).toLocaleString('en', {
+            month: 'short', day: 'numeric',
+            hour: 'numeric', minute: '2-digit',
+        });
+
+        tooltip.innerHTML = `<div style="color:#ccc;margin-bottom:3px;font-weight:600">${title}</div>${rows}<div style="color:#555;margin-top:3px;font-size:10px">#/dL (per-row max\u00a0=\u00a0100%)</div>`;
+        tooltip.style.display = 'block';
+
+        // Keep tooltip inside viewport
+        const vw = window.innerWidth, vh = window.innerHeight;
+        const tw = tooltip.offsetWidth || 180, th = tooltip.offsetHeight || 120;
+        const left = e.clientX + 14 + tw > vw ? e.clientX - tw - 8 : e.clientX + 14;
+        const top  = e.clientY - 10 + th > vh ? vh - th - 8 : e.clientY - 10;
+        tooltip.style.left = `${left}px`;
+        tooltip.style.top  = `${top}px`;
+    });
+
+    canvas.addEventListener('mouseleave', () => {
+        tooltip.style.display = 'none';
     });
 }
 

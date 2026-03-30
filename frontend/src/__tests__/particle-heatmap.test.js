@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { renderHeatmap, TOTAL_H } from '../particle-heatmap.js';
+import { renderHeatmap, TOTAL_H, findClosestPoint } from '../particle-heatmap.js';
 import { PARTICLE_BINS } from '../room-charts.js';
 
 vi.mock('../charts.js', () => ({ xTickCallback: vi.fn() }));
@@ -107,5 +107,41 @@ describe('renderHeatmap', () => {
         renderHeatmap(canvas, null, xRange);
         const dpr = (typeof window !== 'undefined' && window.devicePixelRatio) || 1;
         expect(canvas._ctx.scale).toHaveBeenCalledWith(dpr, dpr);
+    });
+});
+
+// ---- findClosestPoint ----
+
+describe('findClosestPoint', () => {
+    it('returns null for null input', () => {
+        expect(findClosestPoint(null, 5000)).toBeNull();
+    });
+
+    it('returns null for empty array', () => {
+        expect(findClosestPoint([], 5000)).toBeNull();
+    });
+
+    it('returns the only point for a single-element array', () => {
+        const pt = { x: '1970-01-01T00:00:01.000Z', y: 100 };
+        expect(findClosestPoint([pt], 1000)).toBe(pt);
+    });
+
+    it('returns the closer of two points', () => {
+        const a = { x: new Date(1000).toISOString(), y: 1 };
+        const b = { x: new Date(9000).toISOString(), y: 2 };
+        expect(findClosestPoint([a, b], 2000)).toBe(a);
+        expect(findClosestPoint([a, b], 7000)).toBe(b);
+    });
+
+    it('returns exact match when available', () => {
+        const a = { x: new Date(1000).toISOString(), y: 1 };
+        const b = { x: new Date(5000).toISOString(), y: 2 };
+        expect(findClosestPoint([a, b], 5000)).toBe(b);
+    });
+
+    it('works with numeric millisecond timestamps', () => {
+        const a = { x: 1000, y: 1 };
+        const b = { x: 9000, y: 2 };
+        expect(findClosestPoint([a, b], 8000)).toBe(b);
     });
 });
