@@ -44,7 +44,6 @@ export function isIndoorRoom(room) {
 export function combinedChartOpts(ar, room) {
     const hasPM = room.pm.length > 0;
     const hasAC = room.acState.length > 0;
-    const hasParticles = room.particles && PARTICLE_BINS.some(b => room.particles[b.field].length > 0);
     const indoor = isIndoorRoom(room);
 
     const opts = {
@@ -105,17 +104,6 @@ export function combinedChartOpts(ar, room) {
             display: false,
             min: -0.05,
             max: 1.05,
-        };
-    }
-
-    if (hasParticles) {
-        opts.scales.y4 = {
-            type: 'linear',
-            position: 'right',
-            stacked: true,
-            title: { display: true, text: '#/dL', color: '#888', font: { size: 11 } },
-            ticks: { color: '#888' },
-            grid: { drawOnChartArea: false },
         };
     }
 
@@ -184,25 +172,6 @@ export function buildCombinedDatasets(room, { outdoorTempEnabled = false, curren
             stepped: true,
             tension: 0,
         });
-    }
-
-    if (room.particles) {
-        const exclusive = computeExclusiveBins(room.particles);
-        for (const bin of PARTICLE_BINS) {
-            (exclusive[bin.field] || []).forEach((ds, si) => {
-                datasets.push({
-                    ...ds,
-                    label: bin.rangeLabel,
-                    yAxisID: 'y4',
-                    borderColor: bin.color,
-                    backgroundColor: bin.color + 'cc',
-                    fill: true,
-                    borderWidth: 1,
-                    stack: `particles-${si}`,
-                    peakUnit: '#/dL',
-                });
-            });
-        }
     }
 
     if (outdoorTempEnabled && currentWeather.length > 0 && isIndoorRoom(room)) {

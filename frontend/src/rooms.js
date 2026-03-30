@@ -1,7 +1,8 @@
 import { REFRESH_MS, cToF, filterByRange, buildRoomDatasets, computeStatus, getAspectRatio, makeWeatherTempSeries, makeUVSeries, extractDaylightPairs, applyNewAnnotation, removeAnnotation, toLocalInput } from './data.js';
 import { CHART_ANIMATION_MS, Y_AXIS_PADDING } from './config.js';
 import { xTickCallback } from './charts.js';
-import { combinedChartOpts, buildCombinedDatasets } from './room-charts.js';
+import { combinedChartOpts, buildCombinedDatasets, PARTICLE_BINS } from './room-charts.js';
+import { renderHeatmap } from './particle-heatmap.js';
 import { crosshairPlugin, registerChart, unregisterChart } from './crosshair.js';
 import { dragZoomPlugin, registerChart as registerZoomChart, unregisterChart as unregisterZoomChart, setZoomCallback } from './drag-zoom.js';
 import { maximaLabelsPlugin, setMaximaLabelsEnabled } from './maxima-labels.js';
@@ -185,8 +186,17 @@ function buildRoomDOM(rooms) {
 
         registerChart(chart);
         registerZoomChart(chart);
+
+        let heatmapCanvas = null;
+        const hasParticles = PARTICLE_BINS.some(b => (room.particles?.[b.field]?.length ?? 0) > 0);
+        if (hasParticles) {
+            heatmapCanvas = document.createElement('canvas');
+            heatmapCanvas.className = 'heatmap-canvas';
+            section.appendChild(heatmapCanvas);
+        }
+
         container.appendChild(section);
-        roomCharts.push({ room: room.name, chart });
+        roomCharts.push({ room: room.name, chart, heatmapCanvas, roomData: null });
     }
 
     if (reorder) reorder.bindItems();
@@ -251,16 +261,23 @@ function updateCharts(data) {
         const rc = roomCharts.find(r => r.room === room.name);
         if (!rc) continue;
         rc.chart.data.datasets = buildCombinedDatasets(room, { outdoorTempEnabled, currentWeather });
+        rc.roomData = room;
     }
 
     // Align all axes to the same ranges, then update
     const allCharts = roomCharts.map(rc => rc.chart);
-    syncXAxes(allCharts, computeXRange(allCharts));
+    const xRange = computeXRange(allCharts);
+    syncXAxes(allCharts, xRange);
     syncYAxes(allCharts, 'y',  computeYRange(allCharts, 'y',  Y_AXIS_PADDING));
     syncYAxes(allCharts, 'y2', computeYRange(allCharts, 'y2', Y_AXIS_PADDING));
     const updateMode = skipAnimation ? 'none' : undefined;
     skipAnimation = false;
-    for (const rc of roomCharts) rc.chart.update(updateMode);
+    for (const rc of roomCharts) {
+        rc.chart.update(updateMode);
+        if (rc.heatmapCanvas && rc.roomData?.particles && xRange) {
+            renderHeatmap(rc.heatmapCanvas, rc.roomData.particles, xRange);
+        }
+    }
 
     setAnnotations(data.annotations || []);
     updateLatestValues(rooms);
@@ -273,6 +290,10 @@ window.addEventListener('resize', () => {
     for (const rc of roomCharts) {
         rc.chart.options.aspectRatio = ar;
         rc.chart.update();
+        if (rc.heatmapCanvas && rc.roomData?.particles) {
+            const xRange = { min: rc.chart.options.scales.x.min, max: rc.chart.options.scales.x.max };
+            renderHeatmap(rc.heatmapCanvas, rc.roomData.particles, xRange);
+        }
     }
 });
 

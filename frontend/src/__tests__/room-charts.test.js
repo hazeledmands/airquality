@@ -75,18 +75,6 @@ describe('combinedChartOpts', () => {
         expect(opts.scales.y3).toBeUndefined();
     });
 
-    it('adds y4 scale when room has particle data', () => {
-        const room = makeRoom({ particles: { ...emptyParticles, p03: [{ data: [] }] } });
-        const opts = combinedChartOpts(2, room);
-        expect(opts.scales.y4).toBeDefined();
-        expect(opts.scales.y4.stacked).toBe(true);
-    });
-
-    it('omits y4 scale when room has no particle data', () => {
-        const opts = combinedChartOpts(2, makeRoom());
-        expect(opts.scales.y4).toBeUndefined();
-    });
-
     it('enables humidityHighlight for indoor rooms', () => {
         const opts = combinedChartOpts(2, makeRoom({ name: 'Bedroom' }));
         expect(opts.plugins.humidityHighlight.enabled).toBe(true);
@@ -180,62 +168,6 @@ describe('buildCombinedDatasets', () => {
         expect(ds.some(d => d.label === 'Outside Temp')).toBe(false);
     });
 
-    it('maps particle bins to y4 axis with range label', () => {
-        const room = makeRoom({ particles: { ...emptyParticles, p03: [{ data: [{ x: 1, y: 500 }] }], p05: [{ data: [{ x: 1, y: 300 }] }] } });
-        const ds = buildCombinedDatasets(room);
-        const firstParticleDs = ds.find(d => d.yAxisID === 'y4');
-        expect(firstParticleDs.label).toBe('0.3\u20130.5\u00b5m');
-    });
-
-    it('maps all 6 particle bins when present', () => {
-        const particles = Object.fromEntries(
-            ['p03', 'p05', 'p10', 'p25', 'p50', 'p100'].map(f => [f, [{ data: [] }]])
-        );
-        const room = makeRoom({ particles });
-        const ds = buildCombinedDatasets(room);
-        const particleDs = ds.filter(d => d.yAxisID === 'y4');
-        expect(particleDs).toHaveLength(6);
-    });
-
-    it('particle datasets have fill true and backgroundColor', () => {
-        const room = makeRoom({ particles: { ...emptyParticles, p03: [{ data: [] }] } });
-        const ds = buildCombinedDatasets(room);
-        const particleDs = ds.find(d => d.yAxisID === 'y4');
-        expect(particleDs.fill).toBe(true);
-        expect(particleDs.backgroundColor).toBeDefined();
-    });
-
-    it('particle datasets have stack and borderWidth 1', () => {
-        const room = makeRoom({ particles: { ...emptyParticles, p03: [{ data: [] }] } });
-        const ds = buildCombinedDatasets(room);
-        const particleDs = ds.find(d => d.yAxisID === 'y4');
-        expect(particleDs.stack).toBe('particles-0');
-        expect(particleDs.borderWidth).toBe(1);
-    });
-
-    it('two sensors produce separate stack groups', () => {
-        const particles = Object.fromEntries(
-            ['p03', 'p05', 'p10', 'p25', 'p50', 'p100'].map(f => [f, [{ data: [] }, { data: [] }]])
-        );
-        const room = makeRoom({ particles });
-        const ds = buildCombinedDatasets(room);
-        const particleDs = ds.filter(d => d.yAxisID === 'y4');
-        expect(particleDs).toHaveLength(12);
-        expect(particleDs.some(d => d.stack === 'particles-0')).toBe(true);
-        expect(particleDs.some(d => d.stack === 'particles-1')).toBe(true);
-    });
-
-    it('applies exclusive bin computation: p03=500, p05=300 → y=200 for 0.3–0.5µm dataset', () => {
-        const particles = {
-            ...emptyParticles,
-            p03: [{ data: [{ x: 1, y: 500 }] }],
-            p05: [{ data: [{ x: 1, y: 300 }] }],
-        };
-        const room = makeRoom({ particles });
-        const ds = buildCombinedDatasets(room);
-        const p03ds = ds.find(d => d.label === '0.3\u20130.5\u00b5m');
-        expect(p03ds.data[0].y).toBe(200);
-    });
 });
 
 // ---- computeExclusiveBins ----
