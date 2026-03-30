@@ -1,4 +1,5 @@
 const syncedCharts = [];
+const crosshairListeners = [];
 
 export function registerChart(chart) {
     syncedCharts.push(chart);
@@ -11,6 +12,25 @@ export function unregisterChart(chart) {
 
 let hoverTimestamp = null;
 let hoverSourceId = null;
+
+export function getHoverTimestamp() { return hoverTimestamp; }
+
+export function onCrosshairChange(fn) {
+    crosshairListeners.push(fn);
+    return () => {
+        const i = crosshairListeners.indexOf(fn);
+        if (i >= 0) crosshairListeners.splice(i, 1);
+    };
+}
+
+export function setCrosshairTimestamp(t, sourceId) {
+    hoverTimestamp = t;
+    hoverSourceId = sourceId;
+    for (const c of syncedCharts) {
+        if (c.id !== sourceId) c.draw();
+    }
+    for (const fn of crosshairListeners) fn(t, sourceId);
+}
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const WEEK_MS = 7 * DAY_MS;
@@ -26,27 +46,15 @@ export const crosshairPlugin = {
             if (inChartArea) {
                 const xScale = chart.scales.x;
                 if (!xScale) return;
-                hoverTimestamp = xScale.getValueForPixel(event.x);
-                hoverSourceId = chart.id;
-                for (const c of syncedCharts) {
-                    if (c.id !== chart.id) c.draw();
-                }
+                setCrosshairTimestamp(xScale.getValueForPixel(event.x), chart.id);
             } else {
                 if (hoverSourceId === chart.id) {
-                    hoverTimestamp = null;
-                    hoverSourceId = null;
-                    for (const c of syncedCharts) {
-                        if (c.id !== chart.id) c.draw();
-                    }
+                    setCrosshairTimestamp(null, chart.id);
                 }
             }
         } else if (event.type === 'mouseout') {
             if (hoverSourceId === chart.id) {
-                hoverTimestamp = null;
-                hoverSourceId = null;
-                for (const c of syncedCharts) {
-                    if (c.id !== chart.id) c.draw();
-                }
+                setCrosshairTimestamp(null, chart.id);
             }
         }
     },

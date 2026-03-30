@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { crosshairPlugin, registerChart, unregisterChart } from '../crosshair.js';
+import { crosshairPlugin, registerChart, unregisterChart, onCrosshairChange, setCrosshairTimestamp } from '../crosshair.js';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const WEEK_MS = 7 * DAY_MS;
@@ -207,5 +207,60 @@ describe('crosshairPlugin', () => {
             unregisterChart(c1);
             unregisterChart(c2);
         });
+    });
+});
+
+// ---- onCrosshairChange / setCrosshairTimestamp ----
+
+describe('onCrosshairChange', () => {
+    it('calls listener when setCrosshairTimestamp is called', () => {
+        const fn = vi.fn();
+        const unsub = onCrosshairChange(fn);
+        const { chart } = makeChart(0, DAY_MS);
+        registerChart(chart);
+        setCrosshairTimestamp(1000, chart.id);
+        expect(fn).toHaveBeenCalledWith(1000, chart.id);
+        setCrosshairTimestamp(null, chart.id); // cleanup
+        unsub();
+        unregisterChart(chart);
+    });
+
+    it('calls listener with null when crosshair is cleared', () => {
+        const fn = vi.fn();
+        const unsub = onCrosshairChange(fn);
+        const { chart } = makeChart(0, DAY_MS);
+        registerChart(chart);
+        setCrosshairTimestamp(1000, chart.id);
+        setCrosshairTimestamp(null, chart.id);
+        expect(fn).toHaveBeenLastCalledWith(null, chart.id);
+        unsub();
+        unregisterChart(chart);
+    });
+
+    it('stops calling listener after unsubscribe', () => {
+        const fn = vi.fn();
+        const unsub = onCrosshairChange(fn);
+        unsub();
+        const { chart } = makeChart(0, DAY_MS);
+        registerChart(chart);
+        setCrosshairTimestamp(1000, chart.id);
+        expect(fn).not.toHaveBeenCalled();
+        setCrosshairTimestamp(null, chart.id); // cleanup
+        unregisterChart(chart);
+    });
+});
+
+describe('setCrosshairTimestamp', () => {
+    it('triggers draw on registered charts except the source', () => {
+        const { chart: c1 } = makeChart(0, DAY_MS);
+        const { chart: c2 } = makeChart(0, DAY_MS);
+        registerChart(c1);
+        registerChart(c2);
+        setCrosshairTimestamp(1000, c1.id);
+        expect(c1.draw).not.toHaveBeenCalled();
+        expect(c2.draw).toHaveBeenCalled();
+        setCrosshairTimestamp(null, c1.id); // cleanup
+        unregisterChart(c1);
+        unregisterChart(c2);
     });
 });

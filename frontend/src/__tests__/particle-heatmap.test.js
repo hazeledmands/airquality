@@ -11,10 +11,19 @@ function makeCtx() {
         clearRect: vi.fn(),
         fillRect: vi.fn(),
         fillText: vi.fn(),
+        save: vi.fn(),
+        restore: vi.fn(),
+        beginPath: vi.fn(),
+        moveTo: vi.fn(),
+        lineTo: vi.fn(),
+        stroke: vi.fn(),
+        setLineDash: vi.fn(),
         fillStyle: '',
         font: '',
         textAlign: '',
         textBaseline: '',
+        strokeStyle: '',
+        lineWidth: 1,
     };
 }
 
@@ -107,6 +116,36 @@ describe('renderHeatmap', () => {
         renderHeatmap(canvas, null, xRange);
         const dpr = (typeof window !== 'undefined' && window.devicePixelRatio) || 1;
         expect(canvas._ctx.scale).toHaveBeenCalledWith(dpr, dpr);
+    });
+});
+
+// ---- renderHeatmap crosshair ----
+
+describe('renderHeatmap crosshair', () => {
+    it('draws a vertical line when crosshairT is within xRange', () => {
+        const canvas = makeCanvas(400);
+        renderHeatmap(canvas, null, xRange, 5000);
+        expect(canvas._ctx.moveTo).toHaveBeenCalled();
+    });
+
+    it('does not draw a line when crosshairT is null', () => {
+        const canvas = makeCanvas(400);
+        renderHeatmap(canvas, null, xRange, null);
+        expect(canvas._ctx.moveTo).not.toHaveBeenCalled();
+    });
+
+    it('does not draw a line when crosshairT is outside xRange', () => {
+        const canvas = makeCanvas(400);
+        renderHeatmap(canvas, null, xRange, 99999);
+        expect(canvas._ctx.moveTo).not.toHaveBeenCalled();
+    });
+
+    it('draws sibling lines for a multi-day range', () => {
+        const DAY_MS = 86400000;
+        const multiDayRange = { min: 0, max: 3 * DAY_MS };
+        const canvas = makeCanvas(400);
+        renderHeatmap(canvas, null, multiDayRange, DAY_MS * 1.5);
+        expect(canvas._ctx.setLineDash).toHaveBeenCalledWith([3, 4]);
     });
 });
 

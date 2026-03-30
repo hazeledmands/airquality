@@ -3,7 +3,7 @@ import { CHART_ANIMATION_MS, Y_AXIS_PADDING } from './config.js';
 import { xTickCallback } from './charts.js';
 import { combinedChartOpts, buildCombinedDatasets, PARTICLE_BINS } from './room-charts.js';
 import { renderHeatmap, setupHeatmapInteraction } from './particle-heatmap.js';
-import { crosshairPlugin, registerChart, unregisterChart } from './crosshair.js';
+import { crosshairPlugin, registerChart, unregisterChart, getHoverTimestamp } from './crosshair.js';
 import { dragZoomPlugin, registerChart as registerZoomChart, unregisterChart as unregisterZoomChart, setZoomCallback } from './drag-zoom.js';
 import { maximaLabelsPlugin, setMaximaLabelsEnabled } from './maxima-labels.js';
 import { humidityHighlightPlugin, setHumidityHighlightEnabled } from './humidity-highlight.js';
@@ -145,6 +145,7 @@ function buildRoomDOM(rooms) {
     for (const rc of roomCharts) {
         unregisterChart(rc.chart);
         unregisterZoomChart(rc.chart);
+        if (rc.crosshairUnsub) rc.crosshairUnsub();
     }
     roomCharts = [];
 
@@ -200,7 +201,7 @@ function buildRoomDOM(rooms) {
 
         if (heatmapCanvas) {
             const rc = roomCharts[roomCharts.length - 1];
-            setupHeatmapInteraction(heatmapCanvas, () => ({
+            rc.crosshairUnsub = setupHeatmapInteraction(heatmapCanvas, () => ({
                 particles: rc.roomData?.particles,
                 xRange: { min: rc.chart.options.scales.x.min, max: rc.chart.options.scales.x.max },
             }));
@@ -283,7 +284,7 @@ function updateCharts(data) {
     for (const rc of roomCharts) {
         rc.chart.update(updateMode);
         if (rc.heatmapCanvas && rc.roomData?.particles && xRange) {
-            renderHeatmap(rc.heatmapCanvas, rc.roomData.particles, xRange);
+            renderHeatmap(rc.heatmapCanvas, rc.roomData.particles, xRange, getHoverTimestamp());
         }
     }
 
@@ -300,7 +301,7 @@ window.addEventListener('resize', () => {
         rc.chart.update();
         if (rc.heatmapCanvas && rc.roomData?.particles) {
             const xRange = { min: rc.chart.options.scales.x.min, max: rc.chart.options.scales.x.max };
-            renderHeatmap(rc.heatmapCanvas, rc.roomData.particles, xRange);
+            renderHeatmap(rc.heatmapCanvas, rc.roomData.particles, xRange, getHoverTimestamp());
         }
     }
 });

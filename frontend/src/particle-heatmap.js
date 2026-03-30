@@ -1,12 +1,15 @@
 import { PARTICLE_BINS } from './room-charts.js';
+import { onCrosshairChange, setCrosshairTimestamp } from './crosshair.js';
 
 const ROW_H = 11;   // px per bin row
 const LABEL_W = 38; // px for left-side labels
 const GAP = 1;      // px gap between rows
+const DAY_MS = 86400000;
+const WEEK_MS = 7 * DAY_MS;
 
 export const TOTAL_H = PARTICLE_BINS.length * (ROW_H + GAP);
 
-export function renderHeatmap(canvas, particles, xRange) {
+export function renderHeatmap(canvas, particles, xRange, crosshairT = null) {
     const dpr = (typeof window !== 'undefined' && window.devicePixelRatio) || 1;
     const cssW = canvas.offsetWidth || 600;
     canvas.width  = cssW * dpr;
@@ -53,6 +56,35 @@ export function renderHeatmap(canvas, particles, xRange) {
             ctx.fillRect(x0, y, Math.max(1, x1 - x0), ROW_H);
         }
     });
+
+    if (crosshairT != null && xMax > xMin && crosshairT >= xMin && crosshairT <= xMax) {
+        const cx = LABEL_W + ((crosshairT - xMin) / (xMax - xMin)) * plotW;
+        const rangeMs = xMax - xMin;
+        const periodMs = rangeMs > WEEK_MS ? WEEK_MS : DAY_MS;
+        if (rangeMs > periodMs) {
+            ctx.save();
+            ctx.lineWidth = 1;
+            ctx.strokeStyle = 'rgba(255,255,255,0.1)';
+            ctx.setLineDash([3, 4]);
+            for (let t = crosshairT - periodMs; t >= xMin; t -= periodMs) {
+                const sx = LABEL_W + ((t - xMin) / (xMax - xMin)) * plotW;
+                ctx.beginPath(); ctx.moveTo(sx, 0); ctx.lineTo(sx, TOTAL_H); ctx.stroke();
+            }
+            for (let t = crosshairT + periodMs; t <= xMax; t += periodMs) {
+                const sx = LABEL_W + ((t - xMin) / (xMax - xMin)) * plotW;
+                ctx.beginPath(); ctx.moveTo(sx, 0); ctx.lineTo(sx, TOTAL_H); ctx.stroke();
+            }
+            ctx.restore();
+        }
+        ctx.save();
+        ctx.beginPath();
+        ctx.moveTo(cx, 0);
+        ctx.lineTo(cx, TOTAL_H);
+        ctx.lineWidth = 1;
+        ctx.strokeStyle = 'rgba(255,255,255,0.3)';
+        ctx.stroke();
+        ctx.restore();
+    }
 }
 
 export function findClosestPoint(points, t) {
@@ -79,6 +111,21 @@ function getTooltip() {
 
 export function setupHeatmapInteraction(canvas, getState) {
     const tooltip = getTooltip();
+    const myId = 'heatmap-' + Math.random();
+    let currentCrosshairT = null;
+
+    function redraw() {
+        const { particles, xRange } = getState();
+        if (particles && xRange && xRange.min != null) {
+            renderHeatmap(canvas, particles, xRange, currentCrosshairT);
+        }
+    }
+
+    const unsubscribe = onCrosshairChange((t, sourceId) => {
+        if (sourceId === myId) return;
+        currentCrosshairT = t;
+        redraw();
+    });
 
     canvas.addEventListener('mousemove', (e) => {
         const { particles, xRange } = getState();
@@ -91,6 +138,10 @@ export function setupHeatmapInteraction(canvas, getState) {
 
         const ratio = (cssX - LABEL_W) / plotW;
         const t = xRange.min + ratio * (xRange.max - xRange.min);
+
+        currentCrosshairT = t;
+        setCrosshairTimestamp(t, myId);
+        redraw();
 
         // Find the closest timestamp using p03 as reference
         const refPoints = (particles.p03 || []).flatMap(s => s.data);
@@ -125,7 +176,12 @@ export function setupHeatmapInteraction(canvas, getState) {
 
     canvas.addEventListener('mouseleave', () => {
         tooltip.style.display = 'none';
+        currentCrosshairT = null;
+        setCrosshairTimestamp(null, myId);
+        redraw();
     });
+
+    return unsubscribe;
 }
 
 function colorForIntensity(hex, t) {
