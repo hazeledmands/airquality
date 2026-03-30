@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { METRIC_COLORS, isIndoorRoom, combinedChartOpts, buildCombinedDatasets } from '../room-charts.js';
+import { METRIC_COLORS, PARTICLE_BINS, isIndoorRoom, combinedChartOpts, buildCombinedDatasets, computeExclusiveBins } from '../room-charts.js';
 
 // room-charts.js imports xTickCallback from charts.js which accesses Chart global
 vi.mock('../charts.js', () => ({ xTickCallback: vi.fn() }));
@@ -79,6 +79,7 @@ describe('combinedChartOpts', () => {
         const room = makeRoom({ particles: { ...emptyParticles, p03: [{ data: [] }] } });
         const opts = combinedChartOpts(2, room);
         expect(opts.scales.y4).toBeDefined();
+        expect(opts.scales.y4.stacked).toBe(true);
     });
 
     it('omits y4 scale when room has no particle data', () => {
@@ -179,12 +180,11 @@ describe('buildCombinedDatasets', () => {
         expect(ds.some(d => d.label === 'Outside Temp')).toBe(false);
     });
 
-    it('maps particle bins to y4 axis', () => {
-        const room = makeRoom({ particles: { ...emptyParticles, p03: [{ data: [{ x: 1, y: 500 }] }] } });
+    it('maps particle bins to y4 axis with range label', () => {
+        const room = makeRoom({ particles: { ...emptyParticles, p03: [{ data: [{ x: 1, y: 500 }] }], p05: [{ data: [{ x: 1, y: 300 }] }] } });
         const ds = buildCombinedDatasets(room);
-        const particleDs = ds.filter(d => d.yAxisID === 'y4');
-        expect(particleDs).toHaveLength(1);
-        expect(particleDs[0].label).toBe('P≥0.3µm');
+        const firstParticleDs = ds.find(d => d.yAxisID === 'y4');
+        expect(firstParticleDs.label).toBe('0.3\u20130.5\u00b5m');
     });
 
     it('maps all 6 particle bins when present', () => {
@@ -197,10 +197,141 @@ describe('buildCombinedDatasets', () => {
         expect(particleDs).toHaveLength(6);
     });
 
-    it('particle datasets have fill false', () => {
+    it('particle datasets have fill true and backgroundColor', () => {
         const room = makeRoom({ particles: { ...emptyParticles, p03: [{ data: [] }] } });
         const ds = buildCombinedDatasets(room);
         const particleDs = ds.find(d => d.yAxisID === 'y4');
-        expect(particleDs.fill).toBe(false);
+        expect(particleDs.fill).toBe(true);
+        expect(particleDs.backgroundColor).toBeDefined();
+    });
+
+    it('particle datasets have stack and borderWidth 1', () => {
+        const room = makeRoom({ particles: { ...emptyParticles, p03: [{ data: [] }] } });
+        const ds = buildCombinedDatasets(room);
+        const particleDs = ds.find(d => d.yAxisID === 'y4');
+        expect(particleDs.stack).toBe('particles-0');
+        expect(particleDs.borderWidth).toBe(1);
+    });
+
+    it('two sensors produce separate stack groups', () => {
+        const particles = Object.fromEntries(
+            ['p03', 'p05', 'p10', 'p25', 'p50', 'p100'].map(f => [f, [{ data: [] }, { data: [] }]])
+        );
+        const room = makeRoom({ particles });
+        const ds = buildCombinedDatasets(room);
+        const particleDs = ds.filter(d => d.yAxisID === 'y4');
+        expect(particleDs).toHaveLength(12);
+        expect(particleDs.some(d => d.stack === 'particles-0')).toBe(true);
+        expect(particleDs.some(d => d.stack === 'particles-1')).toBe(true);
+    });
+
+    it('applies exclusive bin computation: p03=500, p05=300 → y=200 for 0.3–0.5µm dataset', () => {
+        const particles = {
+            ...emptyParticles,
+            p03: [{ data: [{ x: 1, y: 500 }] }],
+            p05: [{ data: [{ x: 1, y: 300 }] }],
+        };
+        const room = makeRoom({ particles });
+        const ds = buildCombinedDatasets(room);
+        const p03ds = ds.find(d => d.label === '0.3\u20130.5\u00b5m');
+        expect(p03ds.data[0].y).toBe(200);
+    });
+});
+
+// ---- computeExclusiveBins ----
+
+describe('computeExclusiveBins', () => {
+    const bins = ['p03', 'p05', 'p10', 'p25', 'p50', 'p100'];
+
+    function makePts(values) {
+        return values.map((y, i) => ({ x: i + 1, y }));
+    }
+
+    function makeParticles(overrides = {}) {
+        const base = Object.fromEntries(bins.map(f => [f, []]));
+        return { ...base, ...overrides };
+    }
+
+    it('subtracts next bin: p03=500, p05=300 → exclusive p03=200', () => {
+        const particles = makeParticles({
+            p03: [{ data: makePts([500]) }],
+            p05: [{ data: makePts([300]) }],
+        });
+        const result = computeExclusiveBins(particles);
+        expect(result.p03[0].data[0].y).toBe(200);
+    });
+
+    it('last bin (p100) is pass-through', () => {
+        const particles = makeParticles({
+            p100: [{ data: makePts([50]) }],
+        });
+        const result = computeExclusiveBins(particles);
+        expect(result.p100[0].data[0].y).toBe(50);
+    });
+
+    it('clamps negative values to 0', () => {
+        const particles = makeParticles({
+            p03: [{ data: makePts([100]) }],
+            p05: [{ data: makePts([150]) }],
+        });
+        const result = computeExclusiveBins(particles);
+        expect(result.p03[0].data[0].y).toBe(0);
+    });
+
+    it('transforms all data points in a multi-point series', () => {
+        const particles = makeParticles({
+            p03: [{ data: [{ x: 1, y: 600 }, { x: 2, y: 400 }] }],
+            p05: [{ data: [{ x: 1, y: 200 }, { x: 2, y: 100 }] }],
+        });
+        const result = computeExclusiveBins(particles);
+        expect(result.p03[0].data[0].y).toBe(400);
+        expect(result.p03[0].data[1].y).toBe(300);
+    });
+
+    it('handles multiple sensors independently', () => {
+        const particles = makeParticles({
+            p03: [{ data: makePts([500]) }, { data: makePts([800]) }],
+            p05: [{ data: makePts([300]) }, { data: makePts([600]) }],
+        });
+        const result = computeExclusiveBins(particles);
+        expect(result.p03[0].data[0].y).toBe(200);
+        expect(result.p03[1].data[0].y).toBe(200);
+    });
+
+    it('handles jagged array: missing next-bin sensor treated as 0', () => {
+        const particles = makeParticles({
+            p03: [{ data: makePts([500]) }, { data: makePts([400]) }],
+            p05: [{ data: makePts([300]) }], // only 1 sensor for p05
+        });
+        const result = computeExclusiveBins(particles);
+        expect(result.p03[0].data[0].y).toBe(200); // 500-300
+        expect(result.p03[1].data[0].y).toBe(400); // 400-0 (no p05 for sensor 1)
+    });
+
+    it('preserves x timestamps unchanged', () => {
+        const particles = makeParticles({
+            p03: [{ data: [{ x: 9999, y: 100 }] }],
+            p05: [{ data: [{ x: 9999, y: 50 }] }],
+        });
+        const result = computeExclusiveBins(particles);
+        expect(result.p03[0].data[0].x).toBe(9999);
+    });
+
+    it('empty bin arrays produce empty arrays', () => {
+        const particles = makeParticles(); // all empty
+        const result = computeExclusiveBins(particles);
+        for (const f of bins) {
+            expect(result[f]).toHaveLength(0);
+        }
+    });
+
+    it('preserves non-data series properties', () => {
+        const particles = makeParticles({
+            p03: [{ label: 'test-label', borderColor: '#abc', data: makePts([100]) }],
+            p05: [{ data: makePts([50]) }],
+        });
+        const result = computeExclusiveBins(particles);
+        expect(result.p03[0].label).toBe('test-label');
+        expect(result.p03[0].borderColor).toBe('#abc');
     });
 });

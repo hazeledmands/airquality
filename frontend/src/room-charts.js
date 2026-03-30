@@ -11,13 +11,31 @@ export const METRIC_COLORS = {
 };
 
 export const PARTICLE_BINS = [
-    { field: 'p03',  label: 'P\u22650.3\u00b5m', color: '#67e8f9' },
-    { field: 'p05',  label: 'P\u22650.5\u00b5m', color: '#86efac' },
-    { field: 'p10',  label: 'P\u22651.0\u00b5m', color: '#fde68a' },
-    { field: 'p25',  label: 'P\u22652.5\u00b5m', color: '#fca5a5' },
-    { field: 'p50',  label: 'P\u22655.0\u00b5m', color: '#f87171' },
-    { field: 'p100', label: 'P\u226510\u00b5m',  color: '#dc2626' },
+    { field: 'p03',  label: 'P\u22650.3\u00b5m', rangeLabel: '0.3\u20130.5\u00b5m',  color: '#67e8f9' },
+    { field: 'p05',  label: 'P\u22650.5\u00b5m', rangeLabel: '0.5\u20131.0\u00b5m',  color: '#86efac' },
+    { field: 'p10',  label: 'P\u22651.0\u00b5m', rangeLabel: '1.0\u20132.5\u00b5m',  color: '#fde68a' },
+    { field: 'p25',  label: 'P\u22652.5\u00b5m', rangeLabel: '2.5\u20135.0\u00b5m',  color: '#fca5a5' },
+    { field: 'p50',  label: 'P\u22655.0\u00b5m', rangeLabel: '5.0\u201310\u00b5m',   color: '#f87171' },
+    { field: 'p100', label: 'P\u226510\u00b5m',  rangeLabel: '\u226510\u00b5m',       color: '#dc2626' },
 ];
+
+export function computeExclusiveBins(particles) {
+    const fields = PARTICLE_BINS.map(b => b.field);
+    const result = {};
+    for (let bi = 0; bi < fields.length; bi++) {
+        const field = fields[bi];
+        const nextField = fields[bi + 1];
+        result[field] = (particles[field] || []).map((series, si) => {
+            const nextSeries = nextField ? (particles[nextField] || [])[si] : null;
+            const exclusiveData = series.data.map((pt, pi) => {
+                const nextY = nextSeries ? (nextSeries.data[pi]?.y ?? 0) : 0;
+                return { x: pt.x, y: Math.max(0, pt.y - nextY) };
+            });
+            return { ...series, data: exclusiveData };
+        });
+    }
+    return result;
+}
 
 export function isIndoorRoom(room) {
     return !/outside/i.test(room.name);
@@ -94,6 +112,7 @@ export function combinedChartOpts(ar, room) {
         opts.scales.y4 = {
             type: 'linear',
             position: 'right',
+            stacked: true,
             title: { display: true, text: '#/dL', color: '#888', font: { size: 11 } },
             ticks: { color: '#888' },
             grid: { drawOnChartArea: false },
@@ -168,17 +187,21 @@ export function buildCombinedDatasets(room, { outdoorTempEnabled = false, curren
     }
 
     if (room.particles) {
+        const exclusive = computeExclusiveBins(room.particles);
         for (const bin of PARTICLE_BINS) {
-            for (const ds of room.particles[bin.field]) {
+            (exclusive[bin.field] || []).forEach((ds, si) => {
                 datasets.push({
                     ...ds,
-                    label: bin.label,
+                    label: bin.rangeLabel,
                     yAxisID: 'y4',
                     borderColor: bin.color,
-                    fill: false,
+                    backgroundColor: bin.color + 'cc',
+                    fill: true,
+                    borderWidth: 1,
+                    stack: `particles-${si}`,
                     peakUnit: '#/dL',
                 });
-            }
+            });
         }
     }
 
