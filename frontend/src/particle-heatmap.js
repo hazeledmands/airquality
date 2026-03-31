@@ -53,7 +53,7 @@ export function renderHeatmap(canvas, particles, xRange, crosshairT = null, drag
             const x0 = LABEL_W + ((t0 - xMin) / (xMax - xMin)) * plotW;
             const x1 = LABEL_W + ((t1 - xMin) / (xMax - xMin)) * plotW;
             const intensity = allPoints[i].y / maxVal;
-            ctx.fillStyle = colorForIntensity(bin.color, intensity);
+            ctx.fillStyle = colorForIntensity(intensity);
             ctx.fillRect(x0, y, Math.max(1, x1 - x0), ROW_H);
         }
     });
@@ -187,7 +187,7 @@ export function setupHeatmapInteraction(canvas, getState) {
             const pts = (particles[bin.field] || []).flatMap(s => s.data);
             const pt = pts.find(p => +new Date(p.x) === closestT);
             const val = pt != null ? pt.y.toLocaleString('en', { maximumFractionDigits: 0 }) : '—';
-            return `<div><span style="color:${bin.color}">\u25a0</span> ${bin.rangeLabel} <span style="color:#ccc;float:right;margin-left:12px">${val}</span></div>`;
+            return `<div><span style="color:hsl(${HEATMAP_HUE},70%,55%)">\u25a0</span> ${bin.rangeLabel} <span style="color:#ccc;float:right;margin-left:12px">${val}</span></div>`;
         }).join('');
 
         const title = new Date(closestT).toLocaleString('en', {
@@ -220,16 +220,10 @@ export function setupHeatmapInteraction(canvas, getState) {
     };
 }
 
-function colorForIntensity(hex, t) {
-    const bg = [15, 15, 26];
-    const fg = hexToRgb(hex);
-    const r = Math.round(bg[0] + t * (fg[0] - bg[0]));
-    const g = Math.round(bg[1] + t * (fg[1] - bg[1]));
-    const b = Math.round(bg[2] + t * (fg[2] - bg[2]));
-    return `rgb(${r},${g},${b})`;
-}
+export const HEATMAP_HUE = 200; // sky blue
 
-function hexToRgb(hex) {
-    const n = parseInt(hex.slice(1), 16);
-    return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+export function colorForIntensity(t) {
+    const s = Math.round(t * 85);
+    const l = Math.round(7 + t * 48);
+    return `hsl(${HEATMAP_HUE},${s}%,${l}%)`;
 }

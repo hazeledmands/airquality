@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { renderHeatmap, TOTAL_H, findClosestPoint } from '../particle-heatmap.js';
+import { renderHeatmap, TOTAL_H, findClosestPoint, colorForIntensity, HEATMAP_HUE } from '../particle-heatmap.js';
 import { PARTICLE_BINS } from '../room-charts.js';
 
 vi.mock('../charts.js', () => ({ xTickCallback: vi.fn() }));
@@ -117,6 +117,40 @@ describe('renderHeatmap', () => {
         renderHeatmap(canvas, null, xRange);
         const dpr = (typeof window !== 'undefined' && window.devicePixelRatio) || 1;
         expect(canvas._ctx.scale).toHaveBeenCalledWith(dpr, dpr);
+    });
+});
+
+// ---- colorForIntensity ----
+
+function parseHsl(str) {
+    const m = str.match(/hsl\((\d+(?:\.\d+)?),\s*(\d+(?:\.\d+)?)%,\s*(\d+(?:\.\d+)?)%\)/);
+    return m ? { h: +m[1], s: +m[2], l: +m[3] } : null;
+}
+
+describe('colorForIntensity', () => {
+    it('returns an hsl string', () => {
+        expect(parseHsl(colorForIntensity(0.5))).not.toBeNull();
+    });
+
+    it('uses HEATMAP_HUE for all intensities', () => {
+        const low  = parseHsl(colorForIntensity(0.1));
+        const high = parseHsl(colorForIntensity(0.9));
+        expect(low.h).toBe(HEATMAP_HUE);
+        expect(high.h).toBe(HEATMAP_HUE);
+    });
+
+    it('saturation increases with intensity', () => {
+        const s0 = parseHsl(colorForIntensity(0)).s;
+        const s1 = parseHsl(colorForIntensity(1)).s;
+        expect(s1).toBeGreaterThan(s0);
+    });
+
+    it('at t=0 saturation is near zero', () => {
+        expect(parseHsl(colorForIntensity(0)).s).toBeLessThanOrEqual(5);
+    });
+
+    it('at t=1 saturation is high', () => {
+        expect(parseHsl(colorForIntensity(1)).s).toBeGreaterThanOrEqual(70);
     });
 });
 
