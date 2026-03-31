@@ -18,6 +18,7 @@ function makeCtx() {
         lineTo: vi.fn(),
         stroke: vi.fn(),
         setLineDash: vi.fn(),
+        strokeRect: vi.fn(),
         fillStyle: '',
         font: '',
         textAlign: '',
@@ -116,6 +117,29 @@ describe('renderHeatmap', () => {
         renderHeatmap(canvas, null, xRange);
         const dpr = (typeof window !== 'undefined' && window.devicePixelRatio) || 1;
         expect(canvas._ctx.scale).toHaveBeenCalledWith(dpr, dpr);
+    });
+});
+
+// ---- renderHeatmap drag overlay ----
+
+describe('renderHeatmap drag overlay', () => {
+    it('draws a selection rect when dragState spans part of the xRange', () => {
+        const canvas = makeCanvas(400);
+        renderHeatmap(canvas, null, xRange, null, { startT: 2000, currentT: 8000 });
+        expect(canvas._ctx.fillRect).toHaveBeenCalled();
+        expect(canvas._ctx.strokeRect).toHaveBeenCalled();
+    });
+
+    it('does not draw a selection rect when dragState is null', () => {
+        const canvas = makeCanvas(400);
+        renderHeatmap(canvas, null, xRange, null, null);
+        expect(canvas._ctx.strokeRect).not.toHaveBeenCalled();
+    });
+
+    it('does not draw when drag region has zero width', () => {
+        const canvas = makeCanvas(400);
+        renderHeatmap(canvas, null, xRange, null, { startT: 5000, currentT: 5000 });
+        expect(canvas._ctx.strokeRect).not.toHaveBeenCalled();
     });
 });
 

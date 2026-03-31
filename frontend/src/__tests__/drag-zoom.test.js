@@ -1,6 +1,25 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { dragZoomPlugin, registerChart, unregisterChart, setZoomCallback } from '../drag-zoom.js';
+import { dragZoomPlugin, registerChart, unregisterChart, setZoomCallback, getDragState, registerHeatmap, unregisterHeatmap } from '../drag-zoom.js';
+
+const HEATMAP_LABEL_W = 38;
+const HEATMAP_WIDTH = 400;
+
+function makeHeatmapCanvas() {
+    const canvas = document.createElement('canvas');
+    canvas.getBoundingClientRect = () => ({ left: 0, top: 0, width: HEATMAP_WIDTH, height: 72 });
+    return canvas;
+}
+
+function makeHeatmapCallbacks(xMin, xMax) {
+    const plotW = HEATMAP_WIDTH - HEATMAP_LABEL_W;
+    const toTime = (cssX) => {
+        if (cssX < HEATMAP_LABEL_W || cssX > HEATMAP_WIDTH) return null;
+        return xMin + ((cssX - HEATMAP_LABEL_W) / plotW) * (xMax - xMin);
+    };
+    const toPx = (t) => HEATMAP_LABEL_W + ((t - xMin) / (xMax - xMin)) * plotW;
+    return { toTime, toPx };
+}
 
 function makeCtx() {
     return {
@@ -258,5 +277,82 @@ describe('dragZoomPlugin', () => {
 
             unregisterChart(chart);
         });
+    });
+});
+
+describe('getDragState', () => {
+    it('returns null when no drag is active', () => {
+        expect(getDragState()).toBeNull();
+    });
+});
+
+describe('registerHeatmap / unregisterHeatmap', () => {
+    beforeEach(() => { setZoomCallback(null); });
+
+    it('calls onRedraw when a registered chart is dragged', () => {
+        const { chart } = makeChart(0, 1000);
+        registerChart(chart);
+        const canvas = makeHeatmapCanvas();
+        const { toTime, toPx } = makeHeatmapCallbacks(0, 1000);
+        const onRedraw = vi.fn();
+        registerHeatmap(canvas, toTime, toPx, onRedraw);
+
+        mousedown(chart, 100);
+        mousemove(400);
+
+        expect(onRedraw).toHaveBeenCalled();
+
+        mouseup(400);
+        unregisterChart(chart);
+        unregisterHeatmap(canvas);
+    });
+
+    it('starts a drag from the heatmap and fires the zoom callback', () => {
+        const canvas = makeHeatmapCanvas();
+        const { toTime, toPx } = makeHeatmapCallbacks(0, 1000);
+        const onZoom = vi.fn();
+        setZoomCallback(onZoom);
+        registerHeatmap(canvas, toTime, toPx, vi.fn());
+
+        canvas.dispatchEvent(new MouseEvent('mousedown', { clientX: 50, bubbles: true }));
+        document.dispatchEvent(new MouseEvent('mousemove', { clientX: 200 }));
+        document.dispatchEvent(new MouseEvent('mouseup', { clientX: 200 }));
+
+        expect(onZoom).toHaveBeenCalled();
+
+        unregisterHeatmap(canvas);
+    });
+
+    it('does not start drag when mousedown is in the label area', () => {
+        const canvas = makeHeatmapCanvas();
+        const { toTime, toPx } = makeHeatmapCallbacks(0, 1000);
+        const onZoom = vi.fn();
+        setZoomCallback(onZoom);
+        registerHeatmap(canvas, toTime, toPx, vi.fn());
+
+        canvas.dispatchEvent(new MouseEvent('mousedown', { clientX: 20, bubbles: true })); // 20 < LABEL_W=38
+        document.dispatchEvent(new MouseEvent('mouseup', { clientX: 200 }));
+
+        expect(onZoom).not.toHaveBeenCalled();
+
+        unregisterHeatmap(canvas);
+    });
+
+    it('stops calling onRedraw after unregisterHeatmap', () => {
+        const { chart } = makeChart(0, 1000);
+        registerChart(chart);
+        const canvas = makeHeatmapCanvas();
+        const { toTime, toPx } = makeHeatmapCallbacks(0, 1000);
+        const onRedraw = vi.fn();
+        registerHeatmap(canvas, toTime, toPx, onRedraw);
+        unregisterHeatmap(canvas);
+
+        mousedown(chart, 100);
+        mousemove(400);
+
+        expect(onRedraw).not.toHaveBeenCalled();
+
+        mouseup(400);
+        unregisterChart(chart);
     });
 });

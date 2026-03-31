@@ -1,5 +1,6 @@
 import { PARTICLE_BINS } from './room-charts.js';
 import { onCrosshairChange, setCrosshairTimestamp } from './crosshair.js';
+import { registerHeatmap, unregisterHeatmap } from './drag-zoom.js';
 
 const ROW_H = 11;   // px per bin row
 const LABEL_W = 38; // px for left-side labels
@@ -9,7 +10,7 @@ const WEEK_MS = 7 * DAY_MS;
 
 export const TOTAL_H = PARTICLE_BINS.length * (ROW_H + GAP);
 
-export function renderHeatmap(canvas, particles, xRange, crosshairT = null) {
+export function renderHeatmap(canvas, particles, xRange, crosshairT = null, dragState = null) {
     const dpr = (typeof window !== 'undefined' && window.devicePixelRatio) || 1;
     const cssW = canvas.offsetWidth || 600;
     canvas.width  = cssW * dpr;
@@ -85,6 +86,23 @@ export function renderHeatmap(canvas, particles, xRange, crosshairT = null) {
         ctx.stroke();
         ctx.restore();
     }
+
+    if (dragState != null && xMax > xMin) {
+        const x1 = Math.max(LABEL_W, Math.min(cssW, LABEL_W + ((dragState.startT - xMin) / (xMax - xMin)) * plotW));
+        const x2 = Math.max(LABEL_W, Math.min(cssW, LABEL_W + ((dragState.currentT - xMin) / (xMax - xMin)) * plotW));
+        const xl = Math.min(x1, x2);
+        const xr = Math.max(x1, x2);
+        const w = xr - xl;
+        if (w >= 1) {
+            ctx.save();
+            ctx.fillStyle = 'rgba(56, 189, 248, 0.15)';
+            ctx.fillRect(xl, 0, w, TOTAL_H);
+            ctx.strokeStyle = 'rgba(56, 189, 248, 0.5)';
+            ctx.lineWidth = 1;
+            ctx.strokeRect(xl, 0, w, TOTAL_H);
+            ctx.restore();
+        }
+    }
 }
 
 export function findClosestPoint(points, t) {
@@ -121,11 +139,26 @@ export function setupHeatmapInteraction(canvas, getState) {
         }
     }
 
-    const unsubscribe = onCrosshairChange((t, sourceId) => {
+    const unsubscribeCrosshair = onCrosshairChange((t, sourceId) => {
         if (sourceId === myId) return;
         currentCrosshairT = t;
         redraw();
     });
+
+    const toTime = (cssX) => {
+        const { xRange } = getState();
+        if (!xRange || xRange.min == null) return null;
+        const rect = canvas.getBoundingClientRect();
+        const plotW = rect.width - LABEL_W;
+        if (cssX < LABEL_W || cssX > rect.width || plotW <= 0) return null;
+        return xRange.min + ((cssX - LABEL_W) / plotW) * (xRange.max - xRange.min);
+    };
+    const toPx = (t) => {
+        const { xRange } = getState();
+        const rect = canvas.getBoundingClientRect();
+        return LABEL_W + ((t - xRange.min) / (xRange.max - xRange.min)) * (rect.width - LABEL_W);
+    };
+    registerHeatmap(canvas, toTime, toPx, redraw);
 
     canvas.addEventListener('mousemove', (e) => {
         const { particles, xRange } = getState();
@@ -181,7 +214,10 @@ export function setupHeatmapInteraction(canvas, getState) {
         redraw();
     });
 
-    return unsubscribe;
+    return () => {
+        unsubscribeCrosshair();
+        unregisterHeatmap(canvas);
+    };
 }
 
 function colorForIntensity(hex, t) {

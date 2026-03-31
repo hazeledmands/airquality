@@ -1,7 +1,15 @@
 const registeredCharts = [];
+const heatmapEntries = []; // { canvas, toTime, toPx, onRedraw, cleanup }
 let onZoomCallback = null;
-let dragState = null; // { startT, currentT, sourceChart } | null
+let dragState = null; // { startT, currentT, sourceChart? | sourceCanvas? } | null
 const cleanupFns = new WeakMap();
+
+export function getDragState() { return dragState; }
+
+function redrawAll() {
+    for (const c of registeredCharts) c.draw();
+    for (const h of heatmapEntries) h.onRedraw();
+}
 
 const DRAG_THRESHOLD_PX = 5;
 
@@ -26,7 +34,7 @@ function updateDrag(chart, clientX) {
     const xScale = chart.scales.x;
     if (!xScale) return;
     dragState = { ...dragState, currentT: xScale.getValueForPixel(x) };
-    for (const c of registeredCharts) c.draw();
+    redrawAll();
 }
 
 function endDrag(chart, clientX) {
@@ -59,7 +67,7 @@ function endDrag(chart, clientX) {
     // When a zoom fires, the callback triggers a full chart update that redraws everything.
     // Only redraw manually for short non-zoom releases (to clear the lingering overlay).
     if (!zoomed) {
-        for (const c of registeredCharts) c.draw();
+        redrawAll();
     }
 }
 
@@ -90,12 +98,80 @@ export function unregisterChart(chart) {
     if (cleanup) { cleanup(); cleanupFns.delete(chart); }
     if (dragState?.sourceChart === chart) {
         dragState = null;
-        for (const c of registeredCharts) c.draw();
+        redrawAll();
     }
 }
 
 export function setZoomCallback(fn) {
     onZoomCallback = fn;
+}
+
+export function registerHeatmap(canvas, toTime, toPx, onRedraw) {
+    const onDown = (e) => {
+        const rect = canvas.getBoundingClientRect();
+        const cssX = e.clientX - rect.left;
+        const t = toTime(cssX);
+        if (t == null) return;
+        dragState = { startT: t, currentT: t, sourceCanvas: canvas };
+        canvas.style.cursor = 'ew-resize';
+    };
+
+    const onMove = (e) => {
+        if (!dragState || dragState.sourceCanvas !== canvas) return;
+        const rect = canvas.getBoundingClientRect();
+        const cssX = e.clientX - rect.left;
+        const t = toTime(cssX);
+        if (t == null) return;
+        dragState = { ...dragState, currentT: t };
+        redrawAll();
+    };
+
+    const onUp = (e) => {
+        if (!dragState || dragState.sourceCanvas !== canvas) return;
+        const rect = canvas.getBoundingClientRect();
+        const cssX = e.clientX - rect.left;
+        const finalT = toTime(cssX) ?? dragState.currentT;
+        dragState = { ...dragState, currentT: finalT };
+
+        const startPx = toPx(dragState.startT);
+        const endPx = toPx(finalT);
+        const dx = Math.abs(endPx - startPx);
+
+        const zoomed = dx >= DRAG_THRESHOLD_PX && onZoomCallback;
+        if (zoomed) {
+            canvas.addEventListener('click', (e) => e.stopImmediatePropagation(), { capture: true, once: true });
+            onZoomCallback({
+                min: Math.min(dragState.startT, dragState.currentT),
+                max: Math.max(dragState.startT, dragState.currentT),
+            });
+        }
+
+        dragState = null;
+        canvas.style.cursor = '';
+        if (!zoomed) redrawAll();
+    };
+
+    canvas.addEventListener('mousedown', onDown);
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+
+    const entry = { canvas, toTime, toPx, onRedraw, cleanup: () => {
+        canvas.removeEventListener('mousedown', onDown);
+        document.removeEventListener('mousemove', onMove);
+        document.removeEventListener('mouseup', onUp);
+    }};
+    heatmapEntries.push(entry);
+}
+
+export function unregisterHeatmap(canvas) {
+    const i = heatmapEntries.findIndex(h => h.canvas === canvas);
+    if (i < 0) return;
+    heatmapEntries[i].cleanup();
+    heatmapEntries.splice(i, 1);
+    if (dragState?.sourceCanvas === canvas) {
+        dragState = null;
+        redrawAll();
+    }
 }
 
 export const dragZoomPlugin = {
