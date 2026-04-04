@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/hazel/airquality/logger"
+	"github.com/hazel/airquality/openmeteo"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 )
 
@@ -51,6 +52,12 @@ func TestUpdate_PurpleAirRecord(t *testing.T) {
 		PM10:      2.9,
 		AQI:       10,
 		VOC:       87.9,
+		P03:       1234.5,
+		P05:       567.8,
+		P10:       89.1,
+		P25:       12.3,
+		P50:       4.5,
+		P100:      0.6,
 	}
 	m.Update(rec)
 
@@ -69,6 +76,67 @@ func TestUpdate_PurpleAirRecord(t *testing.T) {
 	}
 	if v := testutil.ToFloat64(m.voc.WithLabelValues(labels...)); v != 87.9 {
 		t.Errorf("voc = %v, want 87.9", v)
+	}
+	if v := testutil.ToFloat64(m.p03.WithLabelValues(labels...)); v != 1234.5 {
+		t.Errorf("p03 = %v, want 1234.5", v)
+	}
+	if v := testutil.ToFloat64(m.p05.WithLabelValues(labels...)); v != 567.8 {
+		t.Errorf("p05 = %v, want 567.8", v)
+	}
+	if v := testutil.ToFloat64(m.p10.WithLabelValues(labels...)); v != 89.1 {
+		t.Errorf("p10 = %v, want 89.1", v)
+	}
+	if v := testutil.ToFloat64(m.p25.WithLabelValues(labels...)); v != 12.3 {
+		t.Errorf("p25 = %v, want 12.3", v)
+	}
+	if v := testutil.ToFloat64(m.p50.WithLabelValues(labels...)); v != 4.5 {
+		t.Errorf("p50 = %v, want 4.5", v)
+	}
+	if v := testutil.ToFloat64(m.p100.WithLabelValues(labels...)); v != 0.6 {
+		t.Errorf("p100 = %v, want 0.6", v)
+	}
+}
+
+func TestUpdateWeather(t *testing.T) {
+	m := New()
+	r := openmeteo.Reading{
+		Latitude:        1.3521,
+		Longitude:       103.8198,
+		TempC:           28.5,
+		Humidity:        75.0,
+		DewPointC:       23.4,
+		PressureHPa:     1011.2,
+		PrecipitationMM: 2.4,
+		WindSpeedKMH:    15.0,
+		UVIndex:         6.5,
+		WeatherCode:     61,
+	}
+	m.UpdateWeather(r)
+
+	labels := []string{"weather", "1.3521,103.8198", "outdoor"}
+	if v := testutil.ToFloat64(m.temperature.WithLabelValues(labels...)); v != 28.5 {
+		t.Errorf("temperature = %v, want 28.5", v)
+	}
+	if v := testutil.ToFloat64(m.humidity.WithLabelValues(labels...)); v != 75.0 {
+		t.Errorf("humidity = %v, want 75.0", v)
+	}
+	if v := testutil.ToFloat64(m.dewpoint.WithLabelValues(labels...)); v != 23.4 {
+		t.Errorf("dewpoint = %v, want 23.4", v)
+	}
+	if v := testutil.ToFloat64(m.pressure.WithLabelValues(labels...)); v != 1011.2 {
+		t.Errorf("pressure = %v, want 1011.2", v)
+	}
+	if v := testutil.ToFloat64(m.precipitation.WithLabelValues(labels...)); v != 2.4 {
+		t.Errorf("precipitation = %v, want 2.4", v)
+	}
+	if v := testutil.ToFloat64(m.windspeed.WithLabelValues(labels...)); v != 15.0 {
+		t.Errorf("windspeed = %v, want 15.0", v)
+	}
+	if v := testutil.ToFloat64(m.uvindex.WithLabelValues(labels...)); v != 6.5 {
+		t.Errorf("uvindex = %v, want 6.5", v)
+	}
+	if v := testutil.ToFloat64(m.weathercode.WithLabelValues(labels...)); v != 61 {
+		t.Errorf("weathercode = %v, want 61", v)
 	}
 }
 
@@ -121,5 +189,8 @@ func TestHandler_ServesPrometheusFormat(t *testing.T) {
 	}
 	if !strings.Contains(body, "25.2") {
 		t.Error("response should contain temperature value")
+	}
+	if !strings.Contains(body, "airquality_particles_03_per_dl") {
+		t.Error("response should contain airquality_particles_03_per_dl metric definition")
 	}
 }
