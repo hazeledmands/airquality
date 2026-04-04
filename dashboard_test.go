@@ -6,7 +6,12 @@ import (
 )
 
 func TestDataHandler_ReturnsJSON(t *testing.T) {
-	handler := dataHandler(nil)
+	cache := &dataCache{
+		seenReadings: make(map[string]bool),
+		seenACStates: make(map[string]bool),
+		seenWeather:  make(map[string]bool),
+	}
+	handler := dataHandler(cache)
 	req := httptest.NewRequest("GET", "/api/data", nil)
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, req)

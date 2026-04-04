@@ -187,53 +187,23 @@ func groupACStates(records []logger.ACStateRecord) []acStateData {
 	return result
 }
 
-func dataHandler(db *store.Store) http.HandlerFunc {
+func dataHandler(cache *dataCache) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		to := time.Now().UTC()
-		from := to.AddDate(0, 0, -30)
+		readings, acRecords, weatherRows, annotationRows := cache.snapshot()
 
 		data := &dashboardData{
-			Sensors:     []sensorData{},
-			ACStates:    []acStateData{},
-			Weather:     []weatherReading{},
-			Annotations: []annotationJSON{},
+			Sensors:     groupReadings(readings),
+			ACStates:    groupACStates(acRecords),
+			Weather:     weatherReadings(weatherRows),
+			Annotations: make([]annotationJSON, 0, len(annotationRows)),
 		}
-
-		if db != nil {
-			readings, err := db.QueryReadings(r.Context(), from, to)
-			if err != nil {
-				log.Printf("query readings: %v", err)
-			} else {
-				data.Sensors = groupReadings(readings)
-			}
-
-			acRecords, err := db.QueryACStates(r.Context(), from, to)
-			if err != nil {
-				log.Printf("query ac states: %v", err)
-			} else {
-				data.ACStates = groupACStates(acRecords)
-			}
-
-			weatherRows, err := db.QueryWeather(r.Context(), from, to)
-			if err != nil {
-				log.Printf("query weather: %v", err)
-			} else {
-				data.Weather = weatherReadings(weatherRows)
-			}
-
-			annotationRows, err := db.QueryAnnotations(r.Context(), from, to)
-			if err != nil {
-				log.Printf("query annotations: %v", err)
-			} else {
-				for _, a := range annotationRows {
-					data.Annotations = append(data.Annotations, annotationJSON{
-						ID:        a.ID,
-						Timestamp: a.Timestamp.UTC().Format(time.RFC3339),
-						Note:      a.Note,
-						Room:      a.Room,
-					})
-				}
-			}
+		for _, a := range annotationRows {
+			data.Annotations = append(data.Annotations, annotationJSON{
+				ID:        a.ID,
+				Timestamp: a.Timestamp.UTC().Format(time.RFC3339),
+				Note:      a.Note,
+				Room:      a.Room,
+			})
 		}
 
 		w.Header().Set("Content-Type", "application/json")
@@ -243,7 +213,7 @@ func dataHandler(db *store.Store) http.HandlerFunc {
 	}
 }
 
-func annotationsWriteHandler(db *store.Store) http.HandlerFunc {
+func annotationsWriteHandler(db *store.Store, cache *dataCache) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var body struct {
 			Timestamp string `json:"timestamp"`
@@ -269,6 +239,7 @@ func annotationsWriteHandler(db *store.Store) http.HandlerFunc {
 			http.Error(w, "internal error", http.StatusInternalServerError)
 			return
 		}
+		cache.addAnnotation(a)
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusCreated)
 		if err := json.NewEncoder(w).Encode(annotationJSON{
@@ -282,7 +253,7 @@ func annotationsWriteHandler(db *store.Store) http.HandlerFunc {
 	}
 }
 
-func annotationsDeleteHandler(db *store.Store) http.HandlerFunc {
+func annotationsDeleteHandler(db *store.Store, cache *dataCache) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 		if err != nil {
@@ -294,6 +265,7 @@ func annotationsDeleteHandler(db *store.Store) http.HandlerFunc {
 			http.Error(w, "internal error", http.StatusInternalServerError)
 			return
 		}
+		cache.deleteAnnotation(id)
 		w.WriteHeader(http.StatusNoContent)
 	}
 }

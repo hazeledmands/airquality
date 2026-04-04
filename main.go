@@ -87,10 +87,15 @@ func main() {
 	defer db.Close()
 	log.Printf("Connected to database")
 
+	cache, err := newDataCache(context.Background(), db)
+	if err != nil {
+		log.Fatalf("Failed to backfill cache: %v", err)
+	}
+
 	m := metrics.New()
 
 	if cfg.once {
-		captureAll(context.Background(), m, db, sensiboKey, purpleairHosts, weatherClient, cfg.verbose)
+		captureAll(context.Background(), m, db, cache, sensiboKey, purpleairHosts, weatherClient, cfg.verbose)
 		return
 	}
 
@@ -98,9 +103,9 @@ func main() {
 		addr := fmt.Sprintf(":%d", cfg.port)
 		mux := http.NewServeMux()
 		mux.Handle("/metrics", m.Handler())
-		mux.HandleFunc("/api/data", dataHandler(db))
-		mux.HandleFunc("POST /api/annotations", annotationsWriteHandler(db))
-		mux.HandleFunc("DELETE /api/annotations/{id}", annotationsDeleteHandler(db))
+		mux.HandleFunc("/api/data", dataHandler(cache))
+		mux.HandleFunc("POST /api/annotations", annotationsWriteHandler(db, cache))
+		mux.HandleFunc("DELETE /api/annotations/{id}", annotationsDeleteHandler(db, cache))
 		mux.HandleFunc("/", roomsHandler())
 		log.Printf("Dashboard at http://0.0.0.0:%d/ (accessible from any machine on the network)", cfg.port)
 		log.Printf("Prometheus metrics at http://0.0.0.0:%d/metrics", cfg.port)
@@ -110,7 +115,7 @@ func main() {
 	}()
 
 	log.Printf("Logging to database every %s (Ctrl+C to stop)", cfg.interval)
-	captureAll(context.Background(), m, db, sensiboKey, purpleairHosts, weatherClient, cfg.verbose)
+	captureAll(context.Background(), m, db, cache, sensiboKey, purpleairHosts, weatherClient, cfg.verbose)
 
 	ticker := time.NewTicker(cfg.interval)
 	defer ticker.Stop()
@@ -121,7 +126,7 @@ func main() {
 	for {
 		select {
 		case <-ticker.C:
-			captureAll(context.Background(), m, db, sensiboKey, purpleairHosts, weatherClient, cfg.verbose)
+			captureAll(context.Background(), m, db, cache, sensiboKey, purpleairHosts, weatherClient, cfg.verbose)
 		case <-sig:
 			log.Println("Stopping.")
 			return
@@ -129,22 +134,22 @@ func main() {
 	}
 }
 
-func captureAll(ctx context.Context, m *metrics.Metrics, db *store.Store, sensiboKey string, purpleairHosts []string, weatherClient *openmeteo.Client, verbose bool) {
+func captureAll(ctx context.Context, m *metrics.Metrics, db *store.Store, cache *dataCache, sensiboKey string, purpleairHosts []string, weatherClient *openmeteo.Client, verbose bool) {
 	now := time.Now()
 
 	if sensiboKey != "" {
-		captureSensibo(ctx, m, db, sensiboKey, now, verbose)
-		captureACStates(ctx, db, sensiboKey, verbose)
+		captureSensibo(ctx, m, db, cache, sensiboKey, now, verbose)
+		captureACStates(ctx, db, cache, sensiboKey, verbose)
 	}
 	if len(purpleairHosts) > 0 {
-		capturePurpleAir(ctx, m, db, purpleairHosts, now, verbose)
+		capturePurpleAir(ctx, m, db, cache, purpleairHosts, now, verbose)
 	}
 	if weatherClient != nil {
-		captureWeather(ctx, db, weatherClient, verbose)
+		captureWeather(ctx, m, db, cache, weatherClient, verbose)
 	}
 }
 
-func captureSensibo(ctx context.Context, m *metrics.Metrics, db *store.Store, apiKey string, now time.Time, verbose bool) {
+func captureSensibo(ctx context.Context, m *metrics.Metrics, db *store.Store, cache *dataCache, apiKey string, now time.Time, verbose bool) {
 	client := sensibo.NewClient(apiKey)
 	devices, err := client.GetDevices(ctx)
 	if err != nil {
@@ -176,6 +181,7 @@ func captureSensibo(ctx context.Context, m *metrics.Metrics, db *store.Store, ap
 		if err := db.InsertReading(context.Background(), rec); err != nil {
 			log.Printf("DB write error: %v", err)
 		}
+		cache.addReading(rec)
 		m.Update(rec)
 		if verbose {
 			printVerboseRecord(rec)
@@ -185,7 +191,7 @@ func captureSensibo(ctx context.Context, m *metrics.Metrics, db *store.Store, ap
 	}
 }
 
-func capturePurpleAir(ctx context.Context, m *metrics.Metrics, db *store.Store, hosts []string, now time.Time, verbose bool) {
+func capturePurpleAir(ctx context.Context, m *metrics.Metrics, db *store.Store, cache *dataCache, hosts []string, now time.Time, verbose bool) {
 	client := purpleair.NewClient(hosts)
 	for _, host := range hosts {
 		reading, err := client.Fetch(ctx, host)
@@ -218,6 +224,7 @@ func capturePurpleAir(ctx context.Context, m *metrics.Metrics, db *store.Store, 
 		if err := db.InsertReading(context.Background(), rec); err != nil {
 			log.Printf("DB write error: %v", err)
 		}
+		cache.addReading(rec)
 		m.Update(rec)
 		if verbose {
 			printVerboseRecord(rec)
@@ -227,7 +234,7 @@ func capturePurpleAir(ctx context.Context, m *metrics.Metrics, db *store.Store, 
 	}
 }
 
-func captureACStates(ctx context.Context, db *store.Store, apiKey string, verbose bool) {
+func captureACStates(ctx context.Context, db *store.Store, cache *dataCache, apiKey string, verbose bool) {
 	client := sensibo.NewClient(apiKey)
 	devices, err := client.GetDevices(ctx)
 	if err != nil {
@@ -259,6 +266,7 @@ func captureACStates(ctx context.Context, db *store.Store, apiKey string, verbos
 			if err := db.InsertACState(context.Background(), rec); err != nil {
 				log.Printf("DB AC state write error: %v", err)
 			}
+			cache.addACState(rec)
 			if verbose {
 				log.Printf("  AC state: %s (%s) on=%v mode=%s temp=%d%s fan=%s reason=%s [%s]",
 					dev.Room.Name, dev.ID, sc.ACState.On, sc.ACState.Mode,
@@ -296,7 +304,7 @@ func printVerboseRecord(rec logger.Record) {
 	}
 }
 
-func captureWeather(ctx context.Context, db *store.Store, client *openmeteo.Client, verbose bool) {
+func captureWeather(ctx context.Context, m *metrics.Metrics, db *store.Store, cache *dataCache, client *openmeteo.Client, verbose bool) {
 	reading, err := client.Fetch(ctx)
 	if err != nil {
 		log.Printf("Weather error: %v", err)
@@ -305,6 +313,8 @@ func captureWeather(ctx context.Context, db *store.Store, client *openmeteo.Clie
 	if err := db.InsertWeather(context.Background(), reading); err != nil {
 		log.Printf("DB weather write error: %v", err)
 	}
+	cache.addWeather(reading)
+	m.UpdateWeather(reading)
 	if verbose {
 		log.Printf("  weather (%.4f,%.4f): %.1f°C, %.0f%%, dew point %.1f°C, pressure %.1f hPa, wind %.1f km/h, UV %.1f, precip %.1f mm",
 			reading.Latitude, reading.Longitude,
