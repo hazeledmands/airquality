@@ -9,3 +9,11 @@
 - Any new UI setting or state (date range, selected view, filters, etc.) must be persisted in the URL query string so that reloading the page restores the same view.
 - Visual design: all charts on the page must share the same x-axis (time) range so their time axes are visually aligned. Use `syncXAxes` / `computeXRange` from `src/axis-sync.js` after updating chart datasets.
 - Visual design: variable y-axes (temperature `y`, PM2.5 `y2`) must also be aligned across all charts. Use `syncYAxes` / `computeYRange` from `src/axis-sync.js` for each axis id after setting datasets.
+
+## Edward Tufte design principles
+
+- **Maximize data-ink ratio** — every drop of ink should convey information; erase non-data ink (gridlines, borders, chartjunk) ruthlessly.
+- **Show the data** — let the data speak; avoid decorative elements that distort or obscure the underlying numbers.
+- **Small multiples** — repeat the same graphic structure across many panels to reveal comparisons and patterns without cognitive overhead.
+- **Integrate text, data, and graphics** — annotations, labels, and context belong *on* the chart, not in separate legends or captions.
+- **Avoid chartjunk** — 3D effects, gratuitous color, moiré patterns, and heavy grid lines all add noise without adding meaning.
