@@ -32,26 +32,6 @@
             margin-bottom: 1rem;
             flex-wrap: wrap;
         }
-        .date-range label {
-            font-size: 0.75rem;
-            color: #888;
-            text-transform: uppercase;
-            letter-spacing: 0.04em;
-        }
-        .date-range input[type="datetime-local"] {
-            background: #16172a;
-            border: 1px solid #ffffff15;
-            border-radius: 6px;
-            color: #e0e0e0;
-            padding: 0.35rem 0.5rem;
-            font-size: 0.8rem;
-            font-family: inherit;
-        }
-        .date-range input[type="datetime-local"]:focus {
-            outline: none;
-            border-color: #38bdf8;
-        }
-        .date-range .sep { color: #555; font-size: 0.8rem; }
         .date-range button {
             background: #ffffff10;
             border: 1px solid #ffffff15;
@@ -63,7 +43,92 @@
             font-family: inherit;
         }
         .date-range button:hover { background: #ffffff18; color: #ccc; }
-        .date-range button.active { background: #38bdf820; border-color: #38bdf8; color: #38bdf8; }
+
+        /* Time range picker */
+        .trp-wrap { position: relative; display: flex; align-items: center; gap: 0.25rem; }
+        #trp-trigger {
+            background: #16172a;
+            border: 1px solid #ffffff20;
+            border-radius: 6px;
+            color: #e0e0e0;
+            padding: 0.35rem 0.75rem;
+            font-size: 0.8rem;
+            cursor: pointer;
+            font-family: inherit;
+            white-space: nowrap;
+        }
+        #trp-trigger:hover { border-color: #38bdf840; color: #fff; }
+        #trp-popover {
+            position: absolute;
+            top: calc(100% + 6px);
+            left: 0;
+            z-index: 200;
+            background: #16172a;
+            border: 1px solid #ffffff18;
+            border-radius: 8px;
+            box-shadow: 0 8px 32px rgba(0,0,0,.5);
+            display: flex;
+            min-width: 480px;
+        }
+        #trp-quick {
+            padding: 0.5rem;
+            border-right: 1px solid #ffffff10;
+            display: flex;
+            flex-direction: column;
+            gap: 1px;
+            min-width: 160px;
+        }
+        #trp-quick button {
+            background: transparent;
+            border: none;
+            border-radius: 4px;
+            color: #aaa;
+            padding: 0.3rem 0.6rem;
+            font-size: 0.8rem;
+            text-align: left;
+            cursor: pointer;
+            font-family: inherit;
+            white-space: nowrap;
+        }
+        #trp-quick button:hover { background: #ffffff10; color: #e0e0e0; }
+        .trp-custom {
+            padding: 0.75rem;
+            display: flex;
+            flex-direction: column;
+            gap: 0.6rem;
+            flex: 1;
+        }
+        .trp-field { display: flex; flex-direction: column; gap: 0.25rem; }
+        .trp-field label { font-size: 0.7rem; color: #666; text-transform: uppercase; letter-spacing: 0.05em; }
+        .trp-field input {
+            background: #0e0e1a;
+            border: 1px solid #ffffff15;
+            border-radius: 5px;
+            color: #e0e0e0;
+            padding: 0.35rem 0.5rem;
+            font-size: 0.8rem;
+            font-family: 'SF Mono', 'Fira Mono', monospace;
+            outline: none;
+        }
+        .trp-field input:focus { border-color: #38bdf8; }
+        .trp-field input::placeholder { color: #444; }
+        .trp-hint { font-size: 0.7rem; color: #555; line-height: 1.4; }
+        #trpApply {
+            background: #38bdf820;
+            border: 1px solid #38bdf840;
+            border-radius: 5px;
+            color: #38bdf8;
+            padding: 0.35rem 0.75rem;
+            font-size: 0.75rem;
+            cursor: pointer;
+            font-family: inherit;
+            align-self: flex-start;
+        }
+        #trpApply:hover { background: #38bdf830; }
+        @media (max-width: 600px) {
+            #trp-popover { min-width: calc(100vw - 2rem); flex-direction: column; }
+            #trp-quick { border-right: none; border-bottom: 1px solid #ffffff10; flex-direction: row; flex-wrap: wrap; }
+        }
         .toggle-label {
             font-size: 0.75rem;
             color: #888;
@@ -143,8 +208,6 @@
             .room-section h2 { font-size: 1rem; }
             .chart-card { padding: 0.5rem 0; }
             .date-range { gap: 0.4rem; }
-            .date-range input[type="datetime-local"] { font-size: 0.75rem; padding: 0.3rem 0.4rem; }
-            .date-range label { font-size: 0.65rem; }
             .room-latest { font-size: 0.75rem; gap: 1rem; }
         }
     </style>
@@ -155,19 +218,26 @@
         <span class="status" id="status">Loading&hellip;</span>
     </div>
     <div class="date-range">
-        <button id="rangePrev" title="Previous">&#9664;</button>
-        <button class="preset-btn" data-ms="3600000">1h</button>
-        <button class="preset-btn" data-ms="28800000">8h</button>
-        <button class="preset-btn" data-ms="86400000">1d</button>
-        <button class="preset-btn" data-ms="259200000">3d</button>
-        <button class="preset-btn" data-ms="604800000">1w</button>
-        <button id="rangeNext" title="Next">&#9654;</button>
-        <label for="rangeFrom">From</label>
-        <input type="datetime-local" id="rangeFrom">
-        <span class="sep">&ndash;</span>
-        <label for="rangeTo">To</label>
-        <input type="datetime-local" id="rangeTo">
-        <button id="rangeReset">Reset</button>
+        <div class="trp-wrap">
+            <button id="trp-prev" title="Previous period">&#9664;</button>
+            <button id="trp-trigger">Last 3 days</button>
+            <button id="trp-next" title="Next period">&#9654;</button>
+            <div id="trp-popover" style="display:none">
+                <div id="trp-quick"></div>
+                <div class="trp-custom">
+                    <div class="trp-field">
+                        <label for="trpFrom">From</label>
+                        <input type="text" id="trpFrom" placeholder="now-12h">
+                    </div>
+                    <div class="trp-field">
+                        <label for="trpTo">To</label>
+                        <input type="text" id="trpTo" placeholder="now">
+                    </div>
+                    <p class="trp-hint">Relative: <code>now-6h</code>, <code>now-7d</code>, <code>now/d</code><br>Absolute: <code>2025-04-01T00:00:00Z</code></p>
+                    <button id="trpApply">Apply time range</button>
+                </div>
+            </div>
+        </div>
         <label class="toggle-label"><input type="checkbox" id="showPeaks" checked> Peaks</label>
         <label class="toggle-label"><input type="checkbox" id="showHumidity" checked> High humidity</label>
         <label class="toggle-label"><input type="checkbox" id="showOutdoorTemp"> Outdoor temp</label>

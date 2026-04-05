@@ -1,4 +1,4 @@
-import { REFRESH_MS, cToF, filterByRange, buildRoomDatasets, computeStatus, getAspectRatio, makeWeatherTempSeries, makeUVSeries, extractDaylightPairs, applyNewAnnotation, removeAnnotation, toLocalInput } from './data.js';
+import { REFRESH_MS, cToF, filterByRange, buildRoomDatasets, computeStatus, getAspectRatio, makeWeatherTempSeries, makeUVSeries, extractDaylightPairs, applyNewAnnotation, removeAnnotation } from './data.js';
 import { CHART_ANIMATION_MS, Y_AXIS_PADDING } from './config.js';
 import { xTickCallback } from './charts.js';
 import { combinedChartOpts, buildCombinedDatasets, PARTICLE_BINS } from './room-charts.js';
@@ -8,7 +8,7 @@ import { dragZoomPlugin, registerChart as registerZoomChart, unregisterChart as 
 import { maximaLabelsPlugin, setMaximaLabelsEnabled } from './maxima-labels.js';
 import { humidityHighlightPlugin, setHumidityHighlightEnabled } from './humidity-highlight.js';
 import { daylightPlugin, setDaylightPairs } from './daylight-plugin.js';
-import { setupDateRange } from './daterange.js';
+import { setupTimeRangePicker } from './time-range-picker.js';
 import { createDragHandle } from './chart-card.js';
 import { setupReorder } from './reorder.js';
 import { computeXRange, syncXAxes, computeYRange, syncYAxes } from './axis-sync.js';
@@ -306,25 +306,13 @@ window.addEventListener('resize', () => {
     }
 });
 
-const { setRangeDefaults, applyFilter } = setupDateRange({
-    getDataFn: () => allData,
-    onFilter: (from, to) => {
-        if (allData) updateCharts(filterByRange(allData, from, to));
-    },
-});
+const picker = setupTimeRangePicker({ onApply: fetchData });
 
 setZoomCallback(({ min, max }) => {
-    document.getElementById('rangeFrom').value = toLocalInput(new Date(min));
-    document.getElementById('rangeTo').value = toLocalInput(new Date(max));
-    // Use no-animation mode for zoom updates: the mouse stays over the chart after
-    // drag-release, so Chart.js will fire a mousemove-triggered draw immediately after
-    // chart.update(). With a 300ms animation queued, filler plugin runs on partially-
-    // initialised metas in those intermediate frames and throws "cannot read _clip".
-    // Skipping animation goes straight to the final state, avoiding this.
+    // Skipping animation avoids filler plugin errors during zoom redraws
+    // (see comment in drag-zoom.js for detail).
     skipAnimation = true;
-    requestAnimationFrame(() => {
-        document.getElementById('rangeFrom').dispatchEvent(new Event('change'));
-    });
+    picker.applyRange(String(min), String(max));
 });
 
 async function saveAnnotation(timestamp, note, room) {
@@ -338,9 +326,7 @@ async function saveAnnotation(timestamp, note, room) {
             // Immediately reflect in the UI so the user sees the marker right away.
             const newAnnotation = await resp.json();
             allData = applyNewAnnotation(allData, newAnnotation);
-            const from = document.getElementById('rangeFrom').value;
-            const to = document.getElementById('rangeTo').value;
-            updateCharts(filterByRange(allData, from, to));
+            updateCharts(allData);
         }
         fetchData();
     } catch (err) {
@@ -354,9 +340,7 @@ async function deleteAnnotation(id) {
         if (resp.ok && allData) {
             // Immediately remove from the UI.
             allData = removeAnnotation(allData, id);
-            const from = document.getElementById('rangeFrom').value;
-            const to = document.getElementById('rangeTo').value;
-            updateCharts(filterByRange(allData, from, to));
+            updateCharts(allData);
         }
         fetchData();
     } catch (err) {
@@ -366,12 +350,12 @@ async function deleteAnnotation(id) {
 
 async function fetchData() {
     try {
-        const resp = await fetch('/api/data');
+        const { fromMs, toMs } = picker.getCurrentRange();
+        const stepSize = Math.max(60_000, Math.ceil((toMs - fromMs) / 500 / 60_000) * 60_000);
+        const params = new URLSearchParams({ from: String(fromMs), to: String(toMs), stepSize: String(stepSize) });
+        const resp = await fetch('/api/data?' + params);
         allData = await resp.json();
-        setRangeDefaults(allData);
-        const from = document.getElementById('rangeFrom').value;
-        const to = document.getElementById('rangeTo').value;
-        updateCharts(filterByRange(allData, from, to));
+        updateCharts(allData);
     } catch (err) {
         document.getElementById('status').textContent = 'Error: ' + err.message;
     }
