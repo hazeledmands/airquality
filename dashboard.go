@@ -189,7 +189,28 @@ func groupACStates(records []logger.ACStateRecord) []acStateData {
 
 func dataHandler(cache *dataCache) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		readings, acRecords, weatherRows, annotationRows := cache.snapshot()
+		to := time.Now().UTC()
+		from := to.Add(-cacheDuration)
+
+		if s := r.URL.Query().Get("from"); s != "" {
+			if ms, err := strconv.ParseInt(s, 10, 64); err == nil {
+				from = time.UnixMilli(ms).UTC()
+			}
+		}
+		if s := r.URL.Query().Get("to"); s != "" {
+			if ms, err := strconv.ParseInt(s, 10, 64); err == nil {
+				to = time.UnixMilli(ms).UTC()
+			}
+		}
+
+		readings, acRecords, weatherRows, annotationRows := cache.snapshotRange(from, to)
+
+		if s := r.URL.Query().Get("stepSize"); s != "" {
+			if ms, err := strconv.ParseInt(s, 10, 64); err == nil && ms > 0 {
+				readings = downsampleReadings(readings, from, ms)
+				weatherRows = downsampleWeather(weatherRows, from, ms)
+			}
+		}
 
 		data := &dashboardData{
 			Sensors:     groupReadings(readings),

@@ -141,12 +141,17 @@ func (c *dataCache) deleteAnnotation(id int64) {
 // snapshot returns copies of all cached data within the last 30 days.
 func (c *dataCache) snapshot() ([]logger.Record, []logger.ACStateRecord, []openmeteo.Reading, []store.Annotation) {
 	cutoff := time.Now().UTC().Add(-cacheDuration)
+	return c.snapshotRange(cutoff, time.Now().UTC())
+}
+
+// snapshotRange returns copies of cached data within [from, to].
+func (c *dataCache) snapshotRange(from, to time.Time) ([]logger.Record, []logger.ACStateRecord, []openmeteo.Reading, []store.Annotation) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
 	readings := make([]logger.Record, 0, len(c.readings))
 	for _, r := range c.readings {
-		if r.Timestamp.After(cutoff) {
+		if !r.Timestamp.Before(from) && !r.Timestamp.After(to) {
 			readings = append(readings, r)
 		}
 	}
@@ -154,21 +159,21 @@ func (c *dataCache) snapshot() ([]logger.Record, []logger.ACStateRecord, []openm
 	acStates := make([]logger.ACStateRecord, 0, len(c.acStates))
 	for _, r := range c.acStates {
 		ts, err := time.Parse(time.RFC3339, r.Timestamp)
-		if err == nil && ts.After(cutoff) {
+		if err == nil && !ts.Before(from) && !ts.After(to) {
 			acStates = append(acStates, r)
 		}
 	}
 
 	weather := make([]openmeteo.Reading, 0, len(c.weather))
 	for _, r := range c.weather {
-		if r.Time.After(cutoff) {
+		if !r.Time.Before(from) && !r.Time.After(to) {
 			weather = append(weather, r)
 		}
 	}
 
 	annotations := make([]store.Annotation, 0, len(c.annotations))
 	for _, a := range c.annotations {
-		if a.Timestamp.After(cutoff) {
+		if !a.Timestamp.Before(from) && !a.Timestamp.After(to) {
 			annotations = append(annotations, a)
 		}
 	}
