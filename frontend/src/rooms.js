@@ -131,8 +131,8 @@ function updateWeatherCard(weather) {
         if (strip) strip.innerHTML = parts.join('');
 
         rc.chart.data.datasets = [
-            { ...makeWeatherTempSeries(weather, {}, currentStepSize), yAxisID: 'y' },
-            { ...makeUVSeries(weather, currentStepSize), yAxisID: 'yUV' },
+            { ...makeWeatherTempSeries(weather), yAxisID: 'y' },
+            { ...makeUVSeries(weather), yAxisID: 'yUV' },
         ];
     }
 }

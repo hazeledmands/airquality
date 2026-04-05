@@ -176,7 +176,7 @@ export function buildCombinedDatasets(room, { outdoorTempEnabled = false, curren
 
     if (outdoorTempEnabled && currentWeather.length > 0 && isIndoorRoom(room)) {
         datasets.push({
-            ...makeWeatherTempSeries(currentWeather, {}, stepMs),
+            ...makeWeatherTempSeries(currentWeather),
             yAxisID: 'y',
         });
     }

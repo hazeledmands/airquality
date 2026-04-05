@@ -6,6 +6,7 @@ import {
     cToF,
     makeSeries,
     insertGaps,
+    computePointRadii,
     filterByRange,
     toLocalInput,
     buildRoomDatasets,
@@ -15,6 +16,45 @@ import {
     applyNewAnnotation,
     removeAnnotation,
 } from '../data.js';
+
+describe('computePointRadii', () => {
+    const pt = (y) => ({ x: 0, y });
+
+    it('returns 0 for all points in a contiguous series', () => {
+        const data = [pt(1), pt(2), pt(3)];
+        expect(computePointRadii(data)).toEqual([0, 0, 0]);
+    });
+
+    it('returns radius for an isolated point (null on both sides)', () => {
+        const data = [pt(null), pt(5), pt(null)];
+        const radii = computePointRadii(data);
+        expect(radii[1]).toBeGreaterThan(0);
+    });
+
+    it('returns radius for a point at the start of a gap', () => {
+        const data = [pt(1), pt(2), pt(null), pt(3)];
+        const radii = computePointRadii(data);
+        expect(radii[1]).toBeGreaterThan(0); // edge before gap
+        expect(radii[0]).toBe(0);            // interior
+    });
+
+    it('returns radius for a point at the end of a gap', () => {
+        const data = [pt(1), pt(null), pt(2), pt(3)];
+        const radii = computePointRadii(data);
+        expect(radii[2]).toBeGreaterThan(0); // edge after gap
+        expect(radii[3]).toBe(0);            // interior
+    });
+
+    it('returns 0 for null points themselves', () => {
+        const data = [pt(1), pt(null), pt(2)];
+        expect(computePointRadii(data)[1]).toBe(0);
+    });
+
+    it('uses the provided radius value', () => {
+        const data = [pt(null), pt(5), pt(null)];
+        expect(computePointRadii(data, 4)[1]).toBe(4);
+    });
+});
 
 describe('insertGaps', () => {
     const STEP = 60_000; // 1 minute

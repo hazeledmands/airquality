@@ -10,6 +10,17 @@ export function cToF(c) {
     return c * 9 / 5 + 32;
 }
 
+// Returns a per-point radius array: isolated or edge points (adjacent to a null)
+// get a visible dot; interior points stay invisible.
+export function computePointRadii(data, radius = 2) {
+    return data.map((pt, i) => {
+        if (pt.y === null) return 0;
+        const prevNull = i > 0 && data[i - 1].y === null;
+        const nextNull = i < data.length - 1 && data[i + 1].y === null;
+        return (prevNull || nextNull) ? radius : 0;
+    });
+}
+
 export function insertGaps(points, stepMs) {
     if (!stepMs || points.length < 2) return points;
     const threshold = stepMs * 1.5;
@@ -33,7 +44,8 @@ export function makeSeries(sensor, field, colorIdx, transform, stepMs = 0) {
     const fn = transform || (v => v);
     const raw = sensor.readings.map(r => ({ x: r.timestamp, y: fn(r[field]) }));
     const data = stepMs > 0 ? insertGaps(raw, stepMs) : raw;
-    return { label, data, borderColor: color, backgroundColor: color + '18', fill: false };
+    const pointRadius = stepMs > 0 ? computePointRadii(data) : undefined;
+    return { label, data, borderColor: color, backgroundColor: color + '18', fill: false, pointRadius };
 }
 
 export function makeACStateSeries(state, colorIdx) {
@@ -163,9 +175,8 @@ export function getDataRange(data) {
     return minT !== Infinity ? { min: new Date(minT), max: new Date(maxT) } : null;
 }
 
-export function makeWeatherTempSeries(weather, opts = {}, stepMs = 0) {
-    const raw = weather.map(r => ({ x: r.timestamp, y: cToF(r.temp_c) }));
-    const data = stepMs > 0 ? insertGaps(raw, stepMs) : raw;
+export function makeWeatherTempSeries(weather, opts = {}) {
+    const data = weather.map(r => ({ x: r.timestamp, y: cToF(r.temp_c) }));
     return {
         label: 'Outdoor Temp',
         data,
@@ -178,9 +189,8 @@ export function makeWeatherTempSeries(weather, opts = {}, stepMs = 0) {
     };
 }
 
-export function makeUVSeries(weather, stepMs = 0) {
-    const raw = weather.map(r => ({ x: r.timestamp, y: r.uv_index }));
-    const data = stepMs > 0 ? insertGaps(raw, stepMs) : raw;
+export function makeUVSeries(weather) {
+    const data = weather.map(r => ({ x: r.timestamp, y: r.uv_index }));
     return {
         label: 'UV Index',
         data,
