@@ -112,7 +112,7 @@ export function combinedChartOpts(ar, room) {
 
 // `opts` is `{ outdoorTempEnabled, currentWeather }` — passed in to avoid
 // module-level state coupling and to keep this function pure/testable.
-export function buildCombinedDatasets(room, { outdoorTempEnabled = false, currentWeather = [] } = {}) {
+export function buildCombinedDatasets(room, { outdoorTempEnabled = false, currentWeather = [], stepMs = 0 } = {}) {
     const datasets = [];
 
     for (const ds of room.temp) {
@@ -176,7 +176,7 @@ export function buildCombinedDatasets(room, { outdoorTempEnabled = false, curren
 
     if (outdoorTempEnabled && currentWeather.length > 0 && isIndoorRoom(room)) {
         datasets.push({
-            ...makeWeatherTempSeries(currentWeather),
+            ...makeWeatherTempSeries(currentWeather, {}, stepMs),
             yAxisID: 'y',
         });
     }

@@ -5,6 +5,7 @@ import {
     MOBILE_BREAKPOINT,
     cToF,
     makeSeries,
+    insertGaps,
     filterByRange,
     toLocalInput,
     buildRoomDatasets,
@@ -14,6 +15,60 @@ import {
     applyNewAnnotation,
     removeAnnotation,
 } from '../data.js';
+
+describe('insertGaps', () => {
+    const STEP = 60_000; // 1 minute
+    const T1 = 1_000_000;
+    const T2 = T1 + STEP;         // contiguous
+    const T3 = T2 + STEP;         // contiguous
+    const T4 = T3 + 5 * STEP;     // big gap after T3
+
+    const pts = (ts) => ts.map(t => ({ x: new Date(t).toISOString(), y: 10 }));
+
+    it('returns same reference when stepMs is 0', () => {
+        const data = pts([T1, T2]);
+        expect(insertGaps(data, 0)).toBe(data);
+    });
+
+    it('returns same reference for fewer than 2 points', () => {
+        const data = pts([T1]);
+        expect(insertGaps(data, STEP)).toBe(data);
+    });
+
+    it('does not insert a gap when points are contiguous', () => {
+        const result = insertGaps(pts([T1, T2, T3]), STEP);
+        expect(result).toHaveLength(3);
+    });
+
+    it('inserts a null point when gap exceeds 1.5× stepMs', () => {
+        const result = insertGaps(pts([T1, T4]), STEP);
+        expect(result).toHaveLength(3);
+        expect(result[1].y).toBeNull();
+    });
+
+    it('null point x falls between the two surrounding timestamps', () => {
+        const result = insertGaps(pts([T1, T4]), STEP);
+        const nullX = result[1].x;
+        expect(nullX).toBeGreaterThan(T1);
+        expect(nullX).toBeLessThan(T4);
+    });
+
+    it('preserves original points on either side of the null', () => {
+        const data = pts([T1, T4]);
+        const result = insertGaps(data, STEP);
+        expect(result[0]).toEqual(data[0]);
+        expect(result[2]).toEqual(data[1]);
+    });
+
+    it('inserts a null for each gap in a multi-gap series', () => {
+        // T1→T2 contiguous, T2→T4 big gap, T4→T4+STEP contiguous, T4+STEP→T4+6*STEP big gap
+        const T5 = T4 + STEP;
+        const T6 = T4 + 6 * STEP;
+        const result = insertGaps(pts([T1, T2, T4, T5, T6]), STEP);
+        const nullCount = result.filter(p => p.y === null).length;
+        expect(nullCount).toBe(2);
+    });
+});
 
 describe('cToF', () => {
     it('converts 0°C to 32°F', () => {

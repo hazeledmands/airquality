@@ -10,7 +10,7 @@ const WEEK_MS = 7 * DAY_MS;
 
 export const TOTAL_H = PARTICLE_BINS.length * (ROW_H + GAP);
 
-export function renderHeatmap(canvas, particles, xRange, crosshairT = null, dragState = null) {
+export function renderHeatmap(canvas, particles, xRange, crosshairT = null, dragState = null, stepMs = 0) {
     const dpr = (typeof window !== 'undefined' && window.devicePixelRatio) || 1;
     const cssW = canvas.offsetWidth || 600;
     canvas.width  = cssW * dpr;
@@ -42,19 +42,31 @@ export function renderHeatmap(canvas, particles, xRange, crosshairT = null, drag
         ctx.textBaseline = 'middle';
         ctx.fillText(bin.rangeLabel, LABEL_W - 3, y + ROW_H / 2);
 
-        if (allPoints.length < 2) return;
+        if (allPoints.length === 0) return;
+        if (!stepMs && allPoints.length < 2) return;
 
         const maxVal = Math.max(...allPoints.map(p => p.y));
         if (maxVal === 0) return;
 
-        for (let i = 0; i < allPoints.length - 1; i++) {
-            const t0 = +new Date(allPoints[i].x);
-            const t1 = +new Date(allPoints[i + 1].x);
-            const x0 = LABEL_W + ((t0 - xMin) / (xMax - xMin)) * plotW;
-            const x1 = LABEL_W + ((t1 - xMin) / (xMax - xMin)) * plotW;
-            const intensity = allPoints[i].y / maxVal;
-            ctx.fillStyle = colorForIntensity(intensity);
-            ctx.fillRect(x0, y, Math.max(1, x1 - x0), ROW_H);
+        if (stepMs > 0) {
+            const cellW = Math.max(1, (stepMs / (xMax - xMin)) * plotW);
+            for (const pt of allPoints) {
+                const t0 = +new Date(pt.x);
+                const x0 = LABEL_W + ((t0 - xMin) / (xMax - xMin)) * plotW;
+                const intensity = pt.y / maxVal;
+                ctx.fillStyle = colorForIntensity(intensity);
+                ctx.fillRect(x0, y, cellW, ROW_H);
+            }
+        } else {
+            for (let i = 0; i < allPoints.length - 1; i++) {
+                const t0 = +new Date(allPoints[i].x);
+                const t1 = +new Date(allPoints[i + 1].x);
+                const x0 = LABEL_W + ((t0 - xMin) / (xMax - xMin)) * plotW;
+                const x1 = LABEL_W + ((t1 - xMin) / (xMax - xMin)) * plotW;
+                const intensity = allPoints[i].y / maxVal;
+                ctx.fillStyle = colorForIntensity(intensity);
+                ctx.fillRect(x0, y, Math.max(1, x1 - x0), ROW_H);
+            }
         }
     });
 
@@ -133,9 +145,9 @@ export function setupHeatmapInteraction(canvas, getState) {
     let currentCrosshairT = null;
 
     function redraw() {
-        const { particles, xRange } = getState();
+        const { particles, xRange, stepMs } = getState();
         if (particles && xRange && xRange.min != null) {
-            renderHeatmap(canvas, particles, xRange, currentCrosshairT);
+            renderHeatmap(canvas, particles, xRange, currentCrosshairT, null, stepMs);
         }
     }
 

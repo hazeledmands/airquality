@@ -10,11 +10,29 @@ export function cToF(c) {
     return c * 9 / 5 + 32;
 }
 
-export function makeSeries(sensor, field, colorIdx, transform) {
+export function insertGaps(points, stepMs) {
+    if (!stepMs || points.length < 2) return points;
+    const threshold = stepMs * 1.5;
+    const result = [];
+    for (let i = 0; i < points.length; i++) {
+        result.push(points[i]);
+        if (i < points.length - 1) {
+            const t0 = +new Date(points[i].x);
+            const t1 = +new Date(points[i + 1].x);
+            if (t1 - t0 > threshold) {
+                result.push({ x: Math.round((t0 + t1) / 2), y: null });
+            }
+        }
+    }
+    return result;
+}
+
+export function makeSeries(sensor, field, colorIdx, transform, stepMs = 0) {
     const color = COLORS[colorIdx % COLORS.length];
     const label = sensor.location || `${sensor.source}/${sensor.sensor_id}`;
     const fn = transform || (v => v);
-    const data = sensor.readings.map(r => ({ x: r.timestamp, y: fn(r[field]) }));
+    const raw = sensor.readings.map(r => ({ x: r.timestamp, y: fn(r[field]) }));
+    const data = stepMs > 0 ? insertGaps(raw, stepMs) : raw;
     return { label, data, borderColor: color, backgroundColor: color + '18', fill: false };
 }
 
@@ -75,7 +93,7 @@ export function toLocalInput(d) {
 
 const PARTICLE_FIELDS = ['p03', 'p05', 'p10', 'p25', 'p50', 'p100'];
 
-export function buildRoomDatasets(sensors, acStates = []) {
+export function buildRoomDatasets(sensors, acStates = [], stepMs = 0) {
     const roomMap = new Map();
     const makeRoom = (name, colorIdx) => ({
         name,
@@ -92,15 +110,15 @@ export function buildRoomDatasets(sensors, acStates = []) {
         const name = s.location || s.sensor_id;
         if (!roomMap.has(name)) roomMap.set(name, makeRoom(name, i));
         const room = roomMap.get(name);
-        room.temp.push(makeSeries(s, 'temp_c', i, cToF));
-        room.humidity.push(makeSeries(s, 'humidity', i));
-        room.dewpoint.push(makeSeries(s, 'dewpoint_c', i, cToF));
+        room.temp.push(makeSeries(s, 'temp_c', i, cToF, stepMs));
+        room.humidity.push(makeSeries(s, 'humidity', i, null, stepMs));
+        room.dewpoint.push(makeSeries(s, 'dewpoint_c', i, cToF, stepMs));
         if (s.source === 'purpleair' || s.readings.some(r => r.pm25 > 0)) {
-            room.pm.push(makeSeries(s, 'pm25', i));
+            room.pm.push(makeSeries(s, 'pm25', i, null, stepMs));
         }
         if (s.source === 'purpleair') {
             for (const field of PARTICLE_FIELDS) {
-                room.particles[field].push(makeSeries(s, field, i));
+                room.particles[field].push(makeSeries(s, field, i, null, stepMs));
             }
         }
     });
@@ -145,8 +163,9 @@ export function getDataRange(data) {
     return minT !== Infinity ? { min: new Date(minT), max: new Date(maxT) } : null;
 }
 
-export function makeWeatherTempSeries(weather, opts = {}) {
-    const data = weather.map(r => ({ x: r.timestamp, y: cToF(r.temp_c) }));
+export function makeWeatherTempSeries(weather, opts = {}, stepMs = 0) {
+    const raw = weather.map(r => ({ x: r.timestamp, y: cToF(r.temp_c) }));
+    const data = stepMs > 0 ? insertGaps(raw, stepMs) : raw;
     return {
         label: 'Outdoor Temp',
         data,
@@ -159,8 +178,9 @@ export function makeWeatherTempSeries(weather, opts = {}) {
     };
 }
 
-export function makeUVSeries(weather) {
-    const data = weather.map(r => ({ x: r.timestamp, y: r.uv_index }));
+export function makeUVSeries(weather, stepMs = 0) {
+    const raw = weather.map(r => ({ x: r.timestamp, y: r.uv_index }));
+    const data = stepMs > 0 ? insertGaps(raw, stepMs) : raw;
     return {
         label: 'UV Index',
         data,

@@ -95,7 +95,7 @@ describe('renderHeatmap', () => {
         expect(canvas._ctx.fillRect).not.toHaveBeenCalled();
     });
 
-    it('does not call fillRect when there is only one data point (no cells)', () => {
+    it('does not call fillRect when there is only one data point and no stepMs', () => {
         const canvas = makeCanvas(400);
         const particles = makeParticles({
             p03: [{ x: 5000, y: 500 }],
@@ -117,6 +117,57 @@ describe('renderHeatmap', () => {
         renderHeatmap(canvas, null, xRange);
         const dpr = (typeof window !== 'undefined' && window.devicePixelRatio) || 1;
         expect(canvas._ctx.scale).toHaveBeenCalledWith(dpr, dpr);
+    });
+});
+
+// ---- renderHeatmap with stepMs (fixed-width cells) ----
+
+describe('renderHeatmap with stepMs', () => {
+    const STEP = 1000; // 1s; xRange is 0–10000
+
+    it('calls fillRect for a single data point when stepMs is provided', () => {
+        const canvas = makeCanvas(400);
+        const particles = makeParticles({
+            p03: [{ x: 5000, y: 500 }],
+        });
+        renderHeatmap(canvas, particles, xRange, null, null, STEP);
+        expect(canvas._ctx.fillRect).toHaveBeenCalled();
+    });
+
+    it('draws one cell per data point (not N-1 cells)', () => {
+        const canvas = makeCanvas(400);
+        const particles = makeParticles({
+            p03: [{ x: 1000, y: 500 }, { x: 2000, y: 400 }, { x: 5000, y: 300 }],
+        });
+        renderHeatmap(canvas, particles, xRange, null, null, STEP);
+        // p03 has 3 points → 3 fillRect calls; all other bins are empty
+        expect(canvas._ctx.fillRect).toHaveBeenCalledTimes(3);
+    });
+
+    it('uses the same cell width for all data points', () => {
+        const canvas = makeCanvas(400);
+        const particles = makeParticles({
+            p03: [{ x: 1000, y: 500 }, { x: 2000, y: 400 }, { x: 5000, y: 300 }],
+        });
+        renderHeatmap(canvas, particles, xRange, null, null, STEP);
+        const widths = canvas._ctx.fillRect.mock.calls.map(c => c[2]);
+        expect(widths[0]).toBeCloseTo(widths[1]);
+        expect(widths[0]).toBeCloseTo(widths[2]);
+    });
+
+    it('cell width equals stepMs / rangeMs * plotW', () => {
+        const cssW = 400;
+        const LABEL_W = 38;
+        const plotW = cssW - LABEL_W;
+        const rangeMs = xRange.max - xRange.min; // 10000
+        const expectedCellW = (STEP / rangeMs) * plotW; // 36.2
+        const canvas = makeCanvas(cssW);
+        const particles = makeParticles({
+            p03: [{ x: 1000, y: 500 }],
+        });
+        renderHeatmap(canvas, particles, xRange, null, null, STEP);
+        const call = canvas._ctx.fillRect.mock.calls[0];
+        expect(call[2]).toBeCloseTo(expectedCellW);
     });
 });
 

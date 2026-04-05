@@ -23,6 +23,7 @@ Chart.register(daylightPlugin);
 Chart.register(annotationsPlugin);
 
 let allData = null;
+let currentStepSize = 0;
 let roomCharts = []; // { room, chart }
 let cleanupAnnotationUI = null;
 let reorder = null;
@@ -130,8 +131,8 @@ function updateWeatherCard(weather) {
         if (strip) strip.innerHTML = parts.join('');
 
         rc.chart.data.datasets = [
-            { ...makeWeatherTempSeries(weather), yAxisID: 'y' },
-            { ...makeUVSeries(weather), yAxisID: 'yUV' },
+            { ...makeWeatherTempSeries(weather, {}, currentStepSize), yAxisID: 'y' },
+            { ...makeUVSeries(weather, currentStepSize), yAxisID: 'yUV' },
         ];
     }
 }
@@ -204,6 +205,7 @@ function buildRoomDOM(rooms) {
             rc.crosshairUnsub = setupHeatmapInteraction(heatmapCanvas, () => ({
                 particles: rc.roomData?.particles,
                 xRange: { min: rc.chart.options.scales.x.min, max: rc.chart.options.scales.x.max },
+                stepMs: currentStepSize,
             }));
         }
     }
@@ -253,7 +255,7 @@ function updateCharts(data) {
         return;
     }
 
-    const rooms = buildRoomDatasets(sensors, acStates);
+    const rooms = buildRoomDatasets(sensors, acStates, currentStepSize);
 
     // Rebuild DOM if room set or weather presence changed
     const currentRooms = roomCharts.map(rc => rc.room);
@@ -269,7 +271,7 @@ function updateCharts(data) {
     for (const room of rooms) {
         const rc = roomCharts.find(r => r.room === room.name);
         if (!rc) continue;
-        rc.chart.data.datasets = buildCombinedDatasets(room, { outdoorTempEnabled, currentWeather });
+        rc.chart.data.datasets = buildCombinedDatasets(room, { outdoorTempEnabled, currentWeather, stepMs: currentStepSize });
         rc.roomData = room;
     }
 
@@ -284,7 +286,7 @@ function updateCharts(data) {
     for (const rc of roomCharts) {
         rc.chart.update(updateMode);
         if (rc.heatmapCanvas && rc.roomData?.particles && xRange) {
-            renderHeatmap(rc.heatmapCanvas, rc.roomData.particles, xRange, getHoverTimestamp(), getDragState());
+            renderHeatmap(rc.heatmapCanvas, rc.roomData.particles, xRange, getHoverTimestamp(), getDragState(), currentStepSize);
         }
     }
 
@@ -301,7 +303,7 @@ window.addEventListener('resize', () => {
         rc.chart.update();
         if (rc.heatmapCanvas && rc.roomData?.particles) {
             const xRange = { min: rc.chart.options.scales.x.min, max: rc.chart.options.scales.x.max };
-            renderHeatmap(rc.heatmapCanvas, rc.roomData.particles, xRange, getHoverTimestamp(), getDragState());
+            renderHeatmap(rc.heatmapCanvas, rc.roomData.particles, xRange, getHoverTimestamp(), getDragState(), currentStepSize);
         }
     }
 });
@@ -356,6 +358,7 @@ async function fetchData() {
         const params = new URLSearchParams({ from: String(fromMs), to: String(toMs), stepSize: String(stepSize) });
         const resp = await fetch('/api/data?' + params);
         allData = await resp.json();
+        currentStepSize = stepSize;
         updateCharts(allData);
     } catch (err) {
         document.getElementById('status').textContent = 'Error: ' + err.message;
