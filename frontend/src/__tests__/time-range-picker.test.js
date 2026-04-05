@@ -35,8 +35,8 @@ describe('QUICK_RANGES', () => {
         expect(QUICK_RANGES.some(r => r.label === 'Last 12 hours')).toBe(true);
     });
 
-    it('includes a "Last 7 days" entry', () => {
-        expect(QUICK_RANGES.some(r => r.label === 'Last 7 days')).toBe(true);
+    it('includes a "Last 1 week" entry', () => {
+        expect(QUICK_RANGES.some(r => r.label === 'Last 1 week')).toBe(true);
     });
 });
 
@@ -48,9 +48,9 @@ describe('formatRangeLabel', () => {
         expect(formatRangeLabel(qr.from, qr.to, REF)).toBe('Last 12 hours');
     });
 
-    it('returns the matching quick range label for "Last 7 days"', () => {
-        const qr = QUICK_RANGES.find(r => r.label === 'Last 7 days');
-        expect(formatRangeLabel(qr.from, qr.to, REF)).toBe('Last 7 days');
+    it('returns the matching quick range label for "Last 1 week"', () => {
+        const qr = QUICK_RANGES.find(r => r.label === 'Last 1 week');
+        expect(formatRangeLabel(qr.from, qr.to, REF)).toBe('Last 1 week');
     });
 
     it('returns a formatted date string for a non-quick-range relative pair', () => {
@@ -215,8 +215,8 @@ describe('setupTimeRangePicker — URL persistence', () => {
     it('updates trigger label after applyRange', () => {
         const { trigger } = makeDOM();
         const { applyRange } = setupTimeRangePicker({ onApply: vi.fn() });
-        const qr = QUICK_RANGES.find(r => r.label === 'Last 6 hours');
+        const qr = QUICK_RANGES.find(r => r.label === 'Last 12 hours');
         applyRange(qr.from, qr.to);
-        expect(trigger.textContent).toBe('Last 6 hours');
+        expect(trigger.textContent).toBe('Last 12 hours');
     });
 });

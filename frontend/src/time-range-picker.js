@@ -1,18 +1,14 @@
 import { parseTimeExpr, resolveRange } from './timemath.js';
 
 export const QUICK_RANGES = [
-    { label: 'Last 5 minutes',  from: 'now-5m',  to: 'now' },
-    { label: 'Last 15 minutes', from: 'now-15m', to: 'now' },
-    { label: 'Last 30 minutes', from: 'now-30m', to: 'now' },
-    { label: 'Last 1 hour',     from: 'now-1h',  to: 'now' },
-    { label: 'Last 3 hours',    from: 'now-3h',  to: 'now' },
-    { label: 'Last 6 hours',    from: 'now-6h',  to: 'now' },
-    { label: 'Last 12 hours',   from: 'now-12h', to: 'now' },
-    { label: 'Last 24 hours',   from: 'now-24h', to: 'now' },
-    { label: 'Last 2 days',     from: 'now-2d',  to: 'now' },
-    { label: 'Last 7 days',     from: 'now-7d',  to: 'now' },
-    { label: 'Last 30 days',    from: 'now-30d', to: 'now' },
-    { label: 'Last 90 days',    from: 'now-90d', to: 'now' },
+    { label: 'Last 3 hours',  from: 'now-3h',  to: 'now' },
+    { label: 'Last 12 hours', from: 'now-12h', to: 'now' },
+    { label: 'Last 24 hours', from: 'now-24h', to: 'now' },
+    { label: 'Last 2 days',   from: 'now-2d',  to: 'now' },
+    { label: 'Last 3 days',   from: 'now-3d',  to: 'now' },
+    { label: 'Last 1 week',   from: 'now-7d',  to: 'now' },
+    { label: 'Last 30 days',  from: 'now-30d', to: 'now' },
+    { label: 'Last 90 days',  from: 'now-90d', to: 'now' },
 ];
 
 const DEFAULT_FROM = 'now-3d';
@@ -81,12 +77,18 @@ export function setupTimeRangePicker({ onApply }) {
         trigger.textContent = formatRangeLabel(fromExpr, toExpr);
     }
 
+    function updateNextBtn() {
+        const { toMs } = getCurrentRange();
+        nextBtn.disabled = toMs >= Date.now();
+    }
+
     function applyRange(newFrom, newTo) {
         fromExpr = newFrom;
         toExpr   = newTo;
         fromInput.value = fromExpr;
         toInput.value   = toExpr;
         updateTrigger();
+        updateNextBtn();
         writeURL(fromExpr, toExpr);
         onApply();
     }
@@ -108,6 +110,7 @@ export function setupTimeRangePicker({ onApply }) {
     fromInput.value = fromExpr;
     toInput.value   = toExpr;
     updateTrigger();
+    updateNextBtn();
 
     // Build quick-range buttons
     for (const qr of QUICK_RANGES) {

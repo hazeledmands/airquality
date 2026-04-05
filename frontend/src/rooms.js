@@ -311,8 +311,9 @@ const picker = setupTimeRangePicker({ onApply: fetchData });
 setZoomCallback(({ min, max }) => {
     // Skipping animation avoids filler plugin errors during zoom redraws
     // (see comment in drag-zoom.js for detail).
+    // Round to integer ms — xScale.getValueForPixel returns floats.
     skipAnimation = true;
-    picker.applyRange(String(min), String(max));
+    picker.applyRange(String(Math.round(min)), String(Math.round(max)));
 });
 
 async function saveAnnotation(timestamp, note, room) {
