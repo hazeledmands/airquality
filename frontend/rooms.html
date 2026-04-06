@@ -16,20 +16,21 @@
             background: #0f0f1a;
             color: #e0e0e0;
             padding: 1.5rem;
+            padding-top: calc(1.5rem + 44px);
         }
-        h1 { font-size: 1.4rem; font-weight: 600; font-family: 'Spectral', Georgia, serif; letter-spacing: -0.02em; }
-        .header {
-            display: flex;
-            justify-content: space-between;
-            align-items: baseline;
-            margin-bottom: 1.5rem;
-        }
-        .status { color: #666; font-size: 0.8rem; }
+        .status { color: #666; font-size: 0.8rem; white-space: nowrap; }
         .date-range {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            z-index: 100;
             display: flex;
             align-items: center;
             gap: 0.5rem;
-            margin-bottom: 1rem;
+            padding: 0.5rem 1.5rem;
+            background: #0f0f1a;
+            border-bottom: 1px solid #ffffff0a;
             flex-wrap: wrap;
         }
         .date-range button {
@@ -202,22 +203,16 @@
             font-size: 0.9rem;
         }
         @media (max-width: 600px) {
-            body { padding: 1rem; }
-            h1 { font-size: 1.2rem; }
-            .header { flex-direction: column; gap: 0.2rem; margin-bottom: 1rem; }
+            body { padding: 1rem; padding-top: calc(1rem + 44px); }
+            .date-range { padding: 0.5rem 1rem; gap: 0.4rem; }
             .status { font-size: 0.7rem; }
             .room-section h2 { font-size: 1rem; }
             .chart-card { padding: 0.5rem 0; }
-            .date-range { gap: 0.4rem; }
             .room-latest { font-size: 0.75rem; gap: 1rem; }
         }
     </style>
 </head>
 <body>
-    <div class="header">
-        <h1>Air Quality &mdash; By Room</h1>
-        <span class="status" id="status">Loading&hellip;</span>
-    </div>
     <div class="date-range">
         <div class="trp-wrap">
             <button id="trp-prev" title="Previous period">&#9664;</button>
@@ -242,6 +237,7 @@
         <label class="toggle-label"><input type="checkbox" id="showPeaks" checked> Peaks</label>
         <label class="toggle-label"><input type="checkbox" id="showHumidity" checked> High humidity</label>
         <label class="toggle-label"><input type="checkbox" id="showOutdoorTemp"> Outdoor temp</label>
+        <span class="status" id="status" style="margin-left: auto;">Loading&hellip;</span>
     </div>
     <div id="rooms-container"></div>
     <script type="module" src="/src/rooms.js"></script>
