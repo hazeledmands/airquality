@@ -1,0 +1,10 @@
+- bug: sometimes, when I load the page or refresh, charts just wholly disappear
+- order of values in hovercard should be the same as the horizontal order of data points at that point
+- combining charts from multiple sources to create one room
+- migrate from postgres to prometheus
+- more granular AC state: fan settings, temperatures, etc
+- integrate with AC Infinity
+- integrate with IQAir
+- show rain data from OpenMeteo (and investigate other data, too)
+- "log mode" that displays logs in document form
+- "daily report" mode
