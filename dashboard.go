@@ -116,17 +116,21 @@ type acStateChange struct {
 	Reason     string `json:"reason"`
 }
 
-func groupReadings(records []logger.Record) []sensorData {
+func groupReadings(records []logger.Record, latestLocs map[string]string) []sensorData {
 	sensorMap := make(map[string]*sensorData)
 	var order []string
 	for _, r := range records {
 		key := r.Source + "/" + r.SensorID
 		sensor, exists := sensorMap[key]
 		if !exists {
+			loc := r.Location
+			if latest, ok := latestLocs[key]; ok {
+				loc = latest
+			}
 			sensor = &sensorData{
 				Source:   r.Source,
 				SensorID: r.SensorID,
-				Location: r.Location,
+				Location: loc,
 			}
 			sensorMap[key] = sensor
 			order = append(order, key)
@@ -213,7 +217,7 @@ func dataHandler(cache *dataCache) http.HandlerFunc {
 		}
 
 		data := &dashboardData{
-			Sensors:     groupReadings(readings),
+			Sensors:     groupReadings(readings, cache.latestLocations()),
 			ACStates:    groupACStates(acRecords),
 			Weather:     weatherReadings(weatherRows),
 			Annotations: make([]annotationJSON, 0, len(annotationRows)),

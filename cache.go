@@ -181,6 +181,18 @@ func (c *dataCache) snapshotRange(from, to time.Time) ([]logger.Record, []logger
 	return readings, acStates, weather, annotations
 }
 
+// latestLocations returns the most recent location name for each source/sensor_id
+// key seen in the cache (scanning all 30 days, so last-written wins).
+func (c *dataCache) latestLocations() map[string]string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	locs := make(map[string]string, 16)
+	for _, r := range c.readings { // ascending order — last entry per key wins
+		locs[r.Source+"/"+r.SensorID] = r.Location
+	}
+	return locs
+}
+
 func readingKey(r logger.Record) string {
 	return r.Source + "/" + r.SensorID + "/" +
 		strconv.FormatInt(r.Timestamp.Truncate(time.Minute).Unix(), 10)
