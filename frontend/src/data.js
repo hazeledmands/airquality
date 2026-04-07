@@ -48,12 +48,33 @@ export function makeSeries(sensor, field, colorIdx, transform, stepMs = 0) {
     return { label, data, borderColor: color, backgroundColor: color + '18', fill: false, pointRadius };
 }
 
-export function makeACStateSeries(state, colorIdx) {
+// Build an AC state series resampled at `stepMs` bucket intervals so it has
+// the same array length as the temperature dataset. Chart.js mode:'index'
+// aligns datasets by array index, so mismatched lengths produce wrong tooltips.
+export function makeACStateSeries(state, colorIdx, { fromMs = 0, toMs = 0, stepMs = 0 } = {}) {
     const color = COLORS[colorIdx % COLORS.length];
     const label = state.room || state.device_id;
-    const data = (state.changes || [])
-        .map(change => ({ x: change.timestamp, y: change.on ? 1 : 0 }))
-        .sort((a, b) => new Date(a.x).getTime() - new Date(b.x).getTime());
+    const changes = (state.changes || [])
+        .map(change => ({ t: new Date(change.timestamp).getTime(), on: change.on }))
+        .sort((a, b) => a.t - b.t);
+
+    let data;
+    if (stepMs > 0 && fromMs > 0 && toMs > 0) {
+        // Resample: one point per step bucket, carrying the last known state forward.
+        data = [];
+        let currentY = 0;
+        let ci = 0;
+        for (let t = fromMs; t <= toMs; t += stepMs) {
+            while (ci < changes.length && changes[ci].t <= t) {
+                currentY = changes[ci].on ? 1 : 0;
+                ci++;
+            }
+            data.push({ x: t, y: currentY });
+        }
+    } else {
+        data = changes.map(c => ({ x: new Date(c.t).toISOString(), y: c.on ? 1 : 0 }));
+    }
+
     return {
         label,
         data,
@@ -118,9 +139,20 @@ export function buildRoomDatasets(sensors, acStates = [], stepMs = 0) {
         particles: Object.fromEntries(PARTICLE_FIELDS.map(f => [f, []])),
     });
 
+    // sensor_id → room name, so AC states can match by device_id
+    const sensorIdToRoom = new Map();
+    let minSensorMs = Infinity;
+    let maxSensorMs = 0;
+
     sensors.forEach((s, i) => {
         const name = s.location || s.sensor_id;
         if (!roomMap.has(name)) roomMap.set(name, makeRoom(name, i));
+        sensorIdToRoom.set(s.sensor_id, name);
+        for (const r of s.readings) {
+            const t = new Date(r.timestamp).getTime();
+            if (t < minSensorMs) minSensorMs = t;
+            if (t > maxSensorMs) maxSensorMs = t;
+        }
         const room = roomMap.get(name);
         room.temp.push(makeSeries(s, 'temp_c', i, cToF, stepMs));
         room.humidity.push(makeSeries(s, 'humidity', i, null, stepMs));
@@ -136,9 +168,9 @@ export function buildRoomDatasets(sensors, acStates = [], stepMs = 0) {
     });
 
     acStates.forEach((state, i) => {
-        const name = state.room || state.device_id;
+        const name = sensorIdToRoom.get(state.device_id) || state.room || state.device_id;
         if (!roomMap.has(name)) roomMap.set(name, makeRoom(name, i));
-        roomMap.get(name).acState.push(makeACStateSeries(state, i));
+        roomMap.get(name).acState.push(makeACStateSeries(state, i, { fromMs: minSensorMs, toMs: maxSensorMs, stepMs }));
     });
 
     return Array.from(roomMap.values());

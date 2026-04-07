@@ -193,6 +193,18 @@ func (c *dataCache) latestLocations() map[string]string {
 	return locs
 }
 
+// latestACRooms returns the most recent room name for each AC device_id
+// seen in the cache (ascending order, so last entry per key wins).
+func (c *dataCache) latestACRooms() map[string]string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	rooms := make(map[string]string, 8)
+	for _, r := range c.acStates {
+		rooms[r.DeviceID] = r.RoomName
+	}
+	return rooms
+}
+
 func readingKey(r logger.Record) string {
 	return r.Source + "/" + r.SensorID + "/" +
 		strconv.FormatInt(r.Timestamp.Truncate(time.Minute).Unix(), 10)

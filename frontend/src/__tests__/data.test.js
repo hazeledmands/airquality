@@ -476,6 +476,15 @@ describe('buildRoomDatasets', () => {
         expect(bedroom.acState).toHaveLength(0);
     });
 
+    it('matches AC state by device_id even when room name differs from sensor location', () => {
+        const renamedAC = [{ device_id: 'a', room: 'OldOfficeName', changes: [{ timestamp: '2026-03-17T10:00:00Z', on: true }] }];
+        const rooms = buildRoomDatasets(sensors, renamedAC);
+        const office = rooms.find(r => r.name === 'Office');
+        expect(office.acState).toHaveLength(1);
+        // No orphan room created for 'OldOfficeName'
+        expect(rooms.find(r => r.name === 'OldOfficeName')).toBeUndefined();
+    });
+
     it('preserves sensor order', () => {
         const rooms = buildRoomDatasets(sensors, acStates);
         expect(rooms[0].name).toBe('Office');

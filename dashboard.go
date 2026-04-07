@@ -161,15 +161,19 @@ func groupReadings(records []logger.Record, latestLocs map[string]string) []sens
 	return result
 }
 
-func groupACStates(records []logger.ACStateRecord) []acStateData {
+func groupACStates(records []logger.ACStateRecord, latestRooms map[string]string) []acStateData {
 	stateMap := make(map[string]*acStateData)
 	var order []string
 	for _, r := range records {
 		state, exists := stateMap[r.DeviceID]
 		if !exists {
+			room := r.RoomName
+			if latest, ok := latestRooms[r.DeviceID]; ok {
+				room = latest
+			}
 			state = &acStateData{
 				DeviceID: r.DeviceID,
-				Room:     r.RoomName,
+				Room:     room,
 			}
 			stateMap[r.DeviceID] = state
 			order = append(order, r.DeviceID)
@@ -218,7 +222,7 @@ func dataHandler(cache *dataCache) http.HandlerFunc {
 
 		data := &dashboardData{
 			Sensors:     groupReadings(readings, cache.latestLocations()),
-			ACStates:    groupACStates(acRecords),
+			ACStates:    groupACStates(acRecords, cache.latestACRooms()),
 			Weather:     weatherReadings(weatherRows),
 			Annotations: make([]annotationJSON, 0, len(annotationRows)),
 		}
