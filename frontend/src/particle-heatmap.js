@@ -3,7 +3,7 @@ import { onCrosshairChange, setCrosshairTimestamp } from './crosshair.js';
 import { registerHeatmap, unregisterHeatmap } from './drag-zoom.js';
 
 const ROW_H = 11;   // px per bin row
-const LABEL_W = 38; // px for left-side labels
+const LABEL_W = 50; // px for left-side labels
 const GAP = 1;      // px gap between rows
 const DAY_MS = 86400000;
 const WEEK_MS = 7 * DAY_MS;
