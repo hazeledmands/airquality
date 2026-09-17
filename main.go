@@ -18,6 +18,7 @@ import (
 	"github.com/hazel/airquality/purpleair"
 	"github.com/hazel/airquality/sensibo"
 	"github.com/hazel/airquality/store"
+	"github.com/hazel/airquality/tempest"
 )
 
 type config struct {
@@ -59,6 +60,8 @@ Options:
 Environment:
   SENSIBO_API_KEY     Sensibo cloud API key
   PURPLEAIR_HOSTS     comma-separated PurpleAir sensor IPs
+  TEMPEST_TOKEN       WeatherFlow Tempest personal access token
+  TEMPEST_STATION_ID  Tempest station ID
   DATABASE_URL        PostgreSQL connection string (required)
 
 At least one sensor must be configured.
@@ -71,9 +74,10 @@ func main() {
 	sensiboKey := os.Getenv("SENSIBO_API_KEY")
 	purpleairHosts := parsePurpleAirHosts(os.Getenv("PURPLEAIR_HOSTS"))
 	weatherClient := parseWeatherClient(os.Getenv("WEATHER_LAT"), os.Getenv("WEATHER_LON"))
+	tempestClient := parseTempestClient(os.Getenv("TEMPEST_TOKEN"), os.Getenv("TEMPEST_STATION_ID"))
 
-	if sensiboKey == "" && len(purpleairHosts) == 0 {
-		log.Fatal("No sensors configured. Set SENSIBO_API_KEY and/or PURPLEAIR_HOSTS.")
+	if sensiboKey == "" && len(purpleairHosts) == 0 && tempestClient == nil {
+		log.Fatal("No sensors configured. Set SENSIBO_API_KEY, PURPLEAIR_HOSTS, and/or TEMPEST_TOKEN + TEMPEST_STATION_ID.")
 	}
 
 	dbURL := os.Getenv("DATABASE_URL")
@@ -95,7 +99,7 @@ func main() {
 	m := metrics.New()
 
 	if cfg.once {
-		captureAll(context.Background(), m, db, cache, sensiboKey, purpleairHosts, weatherClient, cfg.verbose)
+		captureAll(context.Background(), m, db, cache, sensiboKey, purpleairHosts, weatherClient, tempestClient, cfg.verbose)
 		return
 	}
 
@@ -115,7 +119,7 @@ func main() {
 	}()
 
 	log.Printf("Logging to database every %s (Ctrl+C to stop)", cfg.interval)
-	captureAll(context.Background(), m, db, cache, sensiboKey, purpleairHosts, weatherClient, cfg.verbose)
+	captureAll(context.Background(), m, db, cache, sensiboKey, purpleairHosts, weatherClient, tempestClient, cfg.verbose)
 
 	ticker := time.NewTicker(cfg.interval)
 	defer ticker.Stop()
@@ -126,7 +130,7 @@ func main() {
 	for {
 		select {
 		case <-ticker.C:
-			captureAll(context.Background(), m, db, cache, sensiboKey, purpleairHosts, weatherClient, cfg.verbose)
+			captureAll(context.Background(), m, db, cache, sensiboKey, purpleairHosts, weatherClient, tempestClient, cfg.verbose)
 		case <-sig:
 			log.Println("Stopping.")
 			return
@@ -134,7 +138,7 @@ func main() {
 	}
 }
 
-func captureAll(ctx context.Context, m *metrics.Metrics, db *store.Store, cache *dataCache, sensiboKey string, purpleairHosts []string, weatherClient *openmeteo.Client, verbose bool) {
+func captureAll(ctx context.Context, m *metrics.Metrics, db *store.Store, cache *dataCache, sensiboKey string, purpleairHosts []string, weatherClient *openmeteo.Client, tempestClient *tempest.Client, verbose bool) {
 	now := time.Now()
 
 	if sensiboKey != "" {
@@ -146,6 +150,9 @@ func captureAll(ctx context.Context, m *metrics.Metrics, db *store.Store, cache 
 	}
 	if weatherClient != nil {
 		captureWeather(ctx, m, db, cache, weatherClient, verbose)
+	}
+	if tempestClient != nil {
+		captureTempest(ctx, m, db, cache, tempestClient, now, verbose)
 	}
 }
 
@@ -278,6 +285,35 @@ func captureACStates(ctx context.Context, db *store.Store, cache *dataCache, api
 	}
 }
 
+func captureTempest(ctx context.Context, m *metrics.Metrics, db *store.Store, cache *dataCache, client *tempest.Client, now time.Time, verbose bool) {
+	obs, err := client.Fetch(ctx)
+	if err != nil {
+		log.Printf("Tempest error: %v", err)
+		return
+	}
+	rec := logger.Record{
+		Timestamp: now,
+		Source:    "tempest",
+		SensorID:  fmt.Sprintf("%d", obs.StationID),
+		Location:  obs.StationName,
+		TempC:     obs.TempC,
+		Humidity:  obs.Humidity,
+		DewPointC: obs.DewPointC,
+		Pressure:  obs.PressureHPa,
+	}
+	if err := db.InsertReading(context.Background(), rec); err != nil {
+		log.Printf("DB write error (tempest): %v", err)
+	}
+	cache.addReading(rec)
+	m.Update(rec)
+	if verbose {
+		printVerboseRecord(rec)
+	} else {
+		log.Printf("  tempest/%d (%s): %.1f°C, %.1f%%, dew point %.1f°C, %.1f hPa",
+			obs.StationID, rec.Location, rec.TempC, rec.Humidity, rec.DewPointC, rec.Pressure)
+	}
+}
+
 func printVerboseRecord(rec logger.Record) {
 	f := calc.CtoF
 	fmt.Printf("  %s/%s (%s)\n", rec.Source, rec.SensorID, rec.Location)
@@ -339,6 +375,22 @@ func parseWeatherClient(latStr, lonStr string) *openmeteo.Client {
 		return nil
 	}
 	return openmeteo.NewClient(lat, lon)
+}
+
+func parseTempestClient(token, stationID string) *tempest.Client {
+	if token == "" {
+		return nil
+	}
+	if stationID == "" {
+		id, err := tempest.DiscoverStationID(context.Background(), tempest.DefaultBaseURL, token, &http.Client{Timeout: 15 * time.Second})
+		if err != nil {
+			log.Printf("Tempest auto-discover failed: %v", err)
+			return nil
+		}
+		stationID = id
+		log.Printf("Tempest: auto-discovered station %s", stationID)
+	}
+	return tempest.NewClient(token, stationID)
 }
 
 func parsePurpleAirHosts(hostsStr string) []string {

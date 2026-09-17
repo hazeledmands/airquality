@@ -5,11 +5,12 @@ Collects and logs air quality sensor data from IoT devices to a CSV file and (op
 Supports:
 - [Sensibo](https://sensibo.com/) Air/Sky — temperature, humidity, dew point
 - [PurpleAir](https://www.purpleair.com/) (local API) — PM1.0/2.5/10, AQI, temperature, humidity, dew point, pressure, VOC
+- [WeatherFlow Tempest](https://weatherflow.com/tempest/) — temperature, humidity, dew point, pressure, wind, rain, UV, solar radiation, lightning
 - [Open-Meteo](https://open-meteo.com/) — outdoor temperature, humidity, UV index, wind, precipitation, sunrise/sunset (no API key required)
 
 ## Setup
 
-Configure one or both sensor types via environment variables:
+Configure one or more sensor types via environment variables:
 
 ```sh
 # Sensibo (cloud API)
@@ -17,9 +18,13 @@ export SENSIBO_API_KEY="your-api-key"    # from https://home.sensibo.com/me/api
 
 # PurpleAir (local sensors, comma-separated IPs)
 export PURPLEAIR_HOSTS="192.168.1.218,192.168.1.219"
+
+# WeatherFlow Tempest (cloud API)
+export TEMPEST_TOKEN="your-token"        # from https://tempestwx.com/settings
+export TEMPEST_STATION_ID="123456"       # your station ID
 ```
 
-At least one must be set.
+At least one sensor must be set.
 
 ### PostgreSQL (optional)
 
