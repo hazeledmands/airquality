@@ -60,6 +60,9 @@ Environment:
   SENSIBO_API_KEY     Sensibo cloud API key
   PURPLEAIR_HOSTS     comma-separated PurpleAir sensor IPs
   DATABASE_URL        PostgreSQL connection string (required)
+  AUTH_USER_HEADER    request header a trusted proxy sets to the signed-in
+                      user (e.g. X-authentik-username); when set, writes
+                      require it. Unset: anyone can edit annotations.
 
 At least one sensor must be configured.
 `)
@@ -94,6 +97,11 @@ func main() {
 
 	m := metrics.New()
 
+	authn := authConfig{header: os.Getenv("AUTH_USER_HEADER")}
+	if authn.header == "" {
+		log.Printf("AUTH_USER_HEADER unset: anyone can edit annotations")
+	}
+
 	if cfg.once {
 		captureAll(context.Background(), m, db, cache, sensiboKey, purpleairHosts, weatherClient, cfg.verbose)
 		return
@@ -104,8 +112,10 @@ func main() {
 		mux := http.NewServeMux()
 		mux.Handle("/metrics", m.Handler())
 		mux.HandleFunc("/api/data", dataHandler(cache))
-		mux.HandleFunc("POST /api/annotations", annotationsWriteHandler(db, cache))
-		mux.HandleFunc("DELETE /api/annotations/{id}", annotationsDeleteHandler(db, cache))
+		mux.HandleFunc("GET /api/me", authn.meHandler())
+		mux.HandleFunc("GET /login", loginHandler())
+		mux.HandleFunc("POST /api/annotations", authn.requireUser(annotationsWriteHandler(db, cache)))
+		mux.HandleFunc("DELETE /api/annotations/{id}", authn.requireUser(annotationsDeleteHandler(db, cache)))
 		mux.HandleFunc("/", roomsHandler())
 		log.Printf("Dashboard at http://0.0.0.0:%d/ (accessible from any machine on the network)", cfg.port)
 		log.Printf("Prometheus metrics at http://0.0.0.0:%d/metrics", cfg.port)

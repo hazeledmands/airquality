@@ -6,6 +6,8 @@ import {
     setAnnotations,
     setAnnotationsEnabled,
     setupAnnotationUI,
+    setAnnotationsEditable,
+    fillTooltip,
 } from '../annotations.js';
 
 // ---- helpers ----
@@ -301,5 +303,67 @@ describe('setupAnnotationUI', () => {
         expect(canvas._annotationHandlers).toBeDefined();
         cleanup();
         expect(canvas._annotationHandlers).toBeUndefined();
+    });
+});
+
+describe('setupAnnotationUI read-only', () => {
+    let created;
+
+    beforeEach(() => {
+        created = [];
+        vi.stubGlobal('document', {
+            createElement: vi.fn(() => {
+                const el = {
+                    style: { cssText: '', display: '' },
+                    innerHTML: '',
+                    textContent: '',
+                    children: [],
+                    appendChild: vi.fn((c) => el.children.push(c)),
+                    replaceChildren: vi.fn((...cs) => { el.children = cs; }),
+                    querySelector: vi.fn(() => ({ style: {}, value: '', addEventListener: vi.fn() })),
+                };
+                created.push(el);
+                return el;
+            }),
+            body: { appendChild: vi.fn() },
+            addEventListener: vi.fn(),
+            removeEventListener: vi.fn(),
+        });
+    });
+
+    afterEach(() => {
+        setAnnotationsEditable(true);
+        setAnnotations([]);
+        vi.unstubAllGlobals();
+    });
+
+    function setup() {
+        const { chart } = makeChart(0, 1000);
+        chart.canvas = makeCanvas();
+        chart.options = {};
+        const onSave = vi.fn();
+        setupAnnotationUI([{ chart }], { onSave, onDelete: vi.fn() });
+        return { canvas: chart.canvas };
+    }
+
+    it('does not open the add popover on empty space', () => {
+        setAnnotationsEditable(false);
+        const { canvas } = setup();
+        const before = created.length;
+        canvas._listeners.click({ clientX: 500, clientY: 10 });
+        expect(created.length).toBe(before);
+    });
+
+});
+
+describe('fillTooltip', () => {
+    it('renders the note as text, not HTML', () => {
+        const doc = { createElement: () => ({ style: {}, textContent: '' }) };
+        const el = { innerHTML: '', replaceChildren: vi.fn() };
+        fillTooltip(el, 'Oct 31', '<img src=x onerror=alert(1)>', doc);
+        const [time, note] = el.replaceChildren.mock.calls[0];
+        expect(time.textContent).toBe('Oct 31');
+        expect(note.textContent).toBe('<img src=x onerror=alert(1)>');
+        expect(el.innerHTML).toBe('');
     });
 });

@@ -12,7 +12,8 @@ import { setupTimeRangePicker } from './time-range-picker.js';
 import { createDragHandle } from './chart-card.js';
 import { setupReorder } from './reorder.js';
 import { computeXRange, syncXAxes, computeYRange, syncYAxes } from './axis-sync.js';
-import { annotationsPlugin, setAnnotations, setupAnnotationUI } from './annotations.js';
+import { annotationsPlugin, setAnnotations, setupAnnotationUI, setAnnotationsEditable } from './annotations.js';
+import { fetchAuth, loginUrl } from './auth.js';
 import { getParam, setParam } from './url-state.js';
 
 Chart.register(crosshairPlugin);
@@ -318,13 +319,37 @@ setZoomCallback(({ min, max }) => {
     picker.applyRange(String(Math.round(min)), String(Math.round(max)));
 });
 
+// Viewing is public; annotating needs a signed-in user. Until /api/me says
+// otherwise the dashboard is read-only, so a signed-out viewer never opens an
+// add popover whose Save would fail.
+const signInLink = document.getElementById('signIn');
+// Resolve at click time: the query string changes as the view does.
+signInLink.addEventListener('click', () => { signInLink.href = loginUrl(window.location); });
+
+function applyAuth({ canEdit }) {
+    setAnnotationsEditable(canEdit);
+    signInLink.hidden = canEdit;
+}
+applyAuth({ canEdit: false });
+fetchAuth().then(applyAuth);
+
+// A write that bounces off sign-in (session expired) comes back as 401 or,
+// via redirect: 'manual', an opaque redirect. Either way, drop to read-only.
+function handleWriteRejected(resp) {
+    if (resp.status === 401 || resp.type === 'opaqueredirect') {
+        applyAuth({ canEdit: false });
+    }
+}
+
 async function saveAnnotation(timestamp, note, room) {
     try {
         const resp = await fetch('/api/annotations', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ timestamp, note, room }),
+            redirect: 'manual',
         });
+        handleWriteRejected(resp);
         if (resp.ok && allData) {
             // Immediately reflect in the UI so the user sees the marker right away.
             const newAnnotation = await resp.json();
@@ -339,7 +364,8 @@ async function saveAnnotation(timestamp, note, room) {
 
 async function deleteAnnotation(id) {
     try {
-        const resp = await fetch(`/api/annotations/${id}`, { method: 'DELETE' });
+        const resp = await fetch(`/api/annotations/${id}`, { method: 'DELETE', redirect: 'manual' });
+        handleWriteRejected(resp);
         if (resp.ok && allData) {
             // Immediately remove from the UI.
             allData = removeAnnotation(allData, id);

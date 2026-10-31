@@ -141,6 +141,9 @@
             gap: 0.3rem;
         }
         .toggle-label input { cursor: pointer; }
+        #signIn { color: rgba(251,191,36,.9); text-decoration: none; white-space: nowrap; }
+        /* .toggle-label's display:flex would otherwise override [hidden]. */
+        #signIn[hidden] { display: none; }
         .room-section {
             margin-bottom: 2rem;
         }
@@ -238,6 +241,7 @@
         <label class="toggle-label"><input type="checkbox" id="showHumidity" checked> High humidity</label>
         <label class="toggle-label"><input type="checkbox" id="showOutdoorTemp"> Outdoor temp</label>
         <span class="status" id="status" style="margin-left: auto;">Loading&hellip;</span>
+        <a class="toggle-label" id="signIn" href="/login" hidden>Sign in to annotate</a>
     </div>
     <div id="rooms-container"></div>
     <script type="module" src="/src/rooms.js"></script>

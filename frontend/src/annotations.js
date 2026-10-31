@@ -2,6 +2,7 @@
 
 let _annotations = [];
 let _enabled = true;
+let _editable = true;
 
 // ---- State setters ----
 
@@ -11,6 +12,12 @@ export function setAnnotations(annotations) {
 
 export function setAnnotationsEnabled(enabled) {
     _enabled = enabled;
+}
+
+// When false, annotations are view-only: clicking empty chart space does
+// nothing and the info popover has no Delete button.
+export function setAnnotationsEditable(editable) {
+    _editable = editable;
 }
 
 // ---- Pure helpers ----
@@ -115,6 +122,18 @@ function getPopover() {
     return _popover;
 }
 
+// Fills the hover tooltip. Notes are user-entered and shown to every viewer,
+// so they go in as text — never innerHTML.
+export function fillTooltip(el, timeText, note, doc = document) {
+    const time = doc.createElement('div');
+    time.style.cssText = 'color:rgba(251,191,36,.9);font-size:11px;margin-bottom:4px';
+    time.textContent = timeText;
+    const body = doc.createElement('div');
+    body.style.cssText = 'color:#ccc;font-size:13px';
+    body.textContent = note;
+    el.replaceChildren(time, body);
+}
+
 function getTooltip() {
     if (_tooltip) return _tooltip;
     _tooltip = document.createElement('div');
@@ -162,6 +181,13 @@ function showAddPopover(screenX, screenY, isoTimestamp, room, onSave) {
     const oldCancel = popover.querySelector('.ann-cancel');
     const newSave   = oldSave.cloneNode(true);
     const newCancel = oldCancel.cloneNode(true);
+    // The info popover restyles this button as Delete (or hides it when
+    // read-only); undo that, or the add popover inherits it.
+    newSave.textContent = 'Save';
+    newSave.style.display = '';
+    newSave.style.background = 'rgba(251,191,36,.15)';
+    newSave.style.border     = '1px solid rgba(251,191,36,.35)';
+    newSave.style.color      = 'rgba(251,191,36,.9)';
     oldSave.replaceWith(newSave);
     oldCancel.replaceWith(newCancel);
 
@@ -195,6 +221,7 @@ function showInfoPopover(screenX, screenY, annotation, onDelete) {
     const oldCancel = popover.querySelector('.ann-cancel');
     const newSave   = oldSave.cloneNode(true);
     const newCancel = oldCancel.cloneNode(true);
+    newSave.style.display = onDelete ? '' : 'none';
     newSave.textContent = 'Delete';
     newSave.style.background = 'rgba(239,68,68,.15)';
     newSave.style.border      = '1px solid rgba(239,68,68,.35)';
@@ -223,10 +250,12 @@ function showInfoPopover(screenX, screenY, annotation, onDelete) {
     popover.style.top  = top  + 'px';
     popover.style.display = 'block';
 
-    newSave.addEventListener('click', async () => {
-        hidePopover();
-        await onDelete(annotation.id);
-    });
+    if (onDelete) {
+        newSave.addEventListener('click', async () => {
+            hidePopover();
+            await onDelete(annotation.id);
+        });
+    }
     newCancel.addEventListener('click', () => {
         hidePopover();
         // Restore input for next add
@@ -269,8 +298,8 @@ export function setupAnnotationUI(charts, { onSave, onDelete }) {
             const visible = _annotations.filter(a => !a.room || a.room === chartRoom);
             const ann = findAnnotationAtPixel(chart, x, visible);
             if (ann) {
-                showInfoPopover(e.clientX, e.clientY, ann, onDelete);
-            } else {
+                showInfoPopover(e.clientX, e.clientY, ann, _editable ? onDelete : null);
+            } else if (_editable) {
                 const tsMs = chart.scales.x.getValueForPixel(x);
                 showAddPopover(e.clientX, e.clientY, new Date(tsMs).toISOString(), chartRoom, onSave);
             }
@@ -285,9 +314,7 @@ export function setupAnnotationUI(charts, { onSave, onDelete }) {
 
             if (ann) {
                 const ts = new Date(ann.timestamp).toLocaleString();
-                tooltip.innerHTML = `
-                    <div style="color:rgba(251,191,36,.9);font-size:11px;margin-bottom:4px">${ts}</div>
-                    <div style="color:#ccc;font-size:13px">${ann.note}</div>`;
+                fillTooltip(tooltip, ts, ann.note);
                 let left = e.clientX + 12;
                 let top  = e.clientY - 40;
                 if (left + 300 > window.innerWidth) left = e.clientX - 312;

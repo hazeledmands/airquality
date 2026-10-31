@@ -83,6 +83,12 @@ Each run fetches up to 20 recent state changes per device from the Sensibo API. 
 
 CSV columns: timestamp, device_id, room, on, mode, target_temp, temp_unit, fan_level, swing, horizontal_swing, changed_properties, reason, sensibo_id.
 
+### Annotation auth (optional)
+
+Viewing is always public. Set `AUTH_USER_HEADER` to the request header a trusted reverse proxy fills with the signed-in user (e.g. `X-authentik-username` behind Authentik forward-auth) and adding or deleting annotations requires it; requests without it get `401`. Unset, anyone can edit — the local-development default.
+
+With it set, the proxy must gate `/login` and `/api/me` and every non-GET request, and must be the only way to reach the app, or the header can be forged. `GET /login?next=<path>` exists only to be gated: it runs the sign-in flow and bounces back. `GET /api/me` reports `{"user", "canEdit"}`; signed-out viewers see a "Sign in to annotate" link and read-only annotations.
+
 ## Dashboard
 
 In continuous mode, a web dashboard is served at `http://localhost:50233/` showing live charts. The default view groups all metrics (temperature, humidity, dew point, PM2.5, AC state) per room. A "By Metric" view at `/by-metric` shows one chart per metric type. Both views auto-refresh every 60 seconds. The date-range picker includes quick presets (1h, 8h, 1d, 3d, 1w) and prev/next buttons to pan through time. Hovering over any chart shows a synced vertical crosshair line across all charts at the same timestamp. A JSON API is available at `/api/data`.
