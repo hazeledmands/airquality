@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { METRIC_COLORS, PARTICLE_BINS, isIndoorRoom, combinedChartOpts, buildCombinedDatasets, computeExclusiveBins } from '../room-charts.js';
+import { METRIC_COLORS, PARTICLE_BINS, isIndoorRoom, combinedChartOpts, buildCombinedDatasets, computeExclusiveBins, formatLatestValues } from '../room-charts.js';
 
 // room-charts.js imports xTickCallback from charts.js which accesses Chart global
 vi.mock('../charts.js', () => ({ xTickCallback: vi.fn() }));
@@ -265,5 +265,99 @@ describe('computeExclusiveBins', () => {
         const result = computeExclusiveBins(particles);
         expect(result.p03[0].label).toBe('test-label');
         expect(result.p03[0].borderColor).toBe('#abc');
+    });
+});
+
+// ---- multiple devices per room ----
+
+describe('buildCombinedDatasets with multiple devices', () => {
+    const series = (device, y) => ({ device, data: [{ x: 1, y }], borderColor: '#000' });
+    const room = makeRoom({
+        devices: ['Sensibo', 'PurpleAir (adj)'],
+        temp: [series('Sensibo', 70), series('PurpleAir (adj)', 71)],
+        humidity: [series('Sensibo', 45), series('PurpleAir (adj)', 44)],
+        pm: [series('PurpleAir (adj)', 2)],
+    });
+
+    it('suffixes labels with the device name', () => {
+        const labels = buildCombinedDatasets(room).map(d => d.label);
+        expect(labels).toContain('Temperature · Sensibo');
+        expect(labels).toContain('Temperature · PurpleAir (adj)');
+        expect(labels).toContain('PM2.5 · PurpleAir (adj)');
+    });
+
+    it('uses the same color for every device of a metric', () => {
+        const temps = buildCombinedDatasets(room).filter(d => d.metric === 'Temperature');
+        expect(temps).toHaveLength(2);
+        expect(new Set(temps.map(d => d.borderColor))).toEqual(new Set([METRIC_COLORS.temp]));
+    });
+
+    it('keeps plain labels for single-device rooms', () => {
+        const single = makeRoom({ devices: ['Sensibo'], temp: [series('Sensibo', 70)] });
+        expect(buildCombinedDatasets(single)[0].label).toBe('Temperature');
+    });
+});
+
+describe('combinedChartOpts legend for multiple devices', () => {
+    const datasets = [
+        { metric: 'Temperature' }, { metric: 'Temperature' }, { metric: 'Humidity' },
+    ];
+    const chartData = { datasets };
+
+    it('shows one legend entry per metric', () => {
+        const { filter } = combinedChartOpts(4, makeRoom()).plugins.legend.labels;
+        const shown = datasets.map((_, i) => filter({ datasetIndex: i, text: '' }, chartData));
+        expect(shown).toEqual([true, false, true]);
+    });
+
+    it('legend entries are labeled by metric, not device', () => {
+        const { generateLabels } = combinedChartOpts(4, makeRoom()).plugins.legend.labels;
+        const chart = {
+            data: { datasets: [{ metric: 'Temperature', label: 'Temperature · Sensibo' }] },
+            isDatasetVisible: () => true,
+            getDatasetMeta: () => ({ controller: { getStyle: () => ({}) } }),
+            options: { plugins: { legend: { labels: {} } } },
+        };
+        expect(generateLabels(chart)[0].text).toBe('Temperature');
+    });
+
+    it('clicking a legend entry toggles all devices of that metric', () => {
+        const { onClick } = combinedChartOpts(4, makeRoom()).plugins.legend;
+        const visible = [true, true, true];
+        const chart = {
+            data: { datasets },
+            isDatasetVisible: i => visible[i],
+            setDatasetVisibility: (i, v) => { visible[i] = v; },
+            update: vi.fn(),
+        };
+        onClick({}, { datasetIndex: 0 }, { chart });
+        expect(visible).toEqual([false, false, true]);
+        expect(chart.update).toHaveBeenCalled();
+    });
+});
+
+describe('formatLatestValues', () => {
+    const series = (device, y) => ({ device, data: [{ x: 1, y }] });
+
+    it('shows one value per metric for a single device', () => {
+        const room = makeRoom({ devices: ['Sensibo'], temp: [series('Sensibo', 70.04)], humidity: [series('Sensibo', 45.2)] });
+        const html = formatLatestValues(room);
+        expect(html).toContain('70.0°F');
+        expect(html).toContain('45%');
+        expect(html).not.toContain('Sensibo');
+    });
+
+    it('shows every device value and a device key for multiple devices', () => {
+        const room = makeRoom({
+            devices: ['Sensibo', 'PurpleAir (adj)'],
+            temp: [series('Sensibo', 70), series('PurpleAir (adj)', 71.5)],
+        });
+        const html = formatLatestValues(room);
+        expect(html).toContain('70.0 / 71.5°F');
+        expect(html).toContain('Sensibo / PurpleAir (adj)');
+    });
+
+    it('returns empty string when there is no temperature data', () => {
+        expect(formatLatestValues(makeRoom())).toBe('');
     });
 });

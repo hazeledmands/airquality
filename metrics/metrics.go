@@ -10,7 +10,9 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
-var sensorLabels = []string{"source", "sensor_id", "location"}
+// location is what the device reports; room is the resolved room from the
+// config file (equal to location when no override is configured).
+var sensorLabels = []string{"source", "sensor_id", "location", "room"}
 
 type Metrics struct {
 	registry      *prometheus.Registry
@@ -126,8 +128,13 @@ func New() *Metrics {
 	return m
 }
 
-func (m *Metrics) Update(rec logger.Record) {
-	l := []string{rec.Source, rec.SensorID, rec.Location}
+// Update sets gauges from a raw record. room is the resolved room; empty means
+// use the record's location. Values are always raw (no calibration offsets).
+func (m *Metrics) Update(rec logger.Record, room string) {
+	if room == "" {
+		room = rec.Location
+	}
+	l := []string{rec.Source, rec.SensorID, rec.Location, room}
 	m.temperature.WithLabelValues(l...).Set(rec.TempC)
 	m.humidity.WithLabelValues(l...).Set(rec.Humidity)
 	m.dewpoint.WithLabelValues(l...).Set(rec.DewPointC)
@@ -150,7 +157,7 @@ func (m *Metrics) Update(rec logger.Record) {
 // gauges with source="weather". Weather-only fields get dedicated gauges.
 func (m *Metrics) UpdateWeather(r openmeteo.Reading) {
 	sensorID := fmt.Sprintf("%.4f,%.4f", r.Latitude, r.Longitude)
-	l := []string{"weather", sensorID, "outdoor"}
+	l := []string{"weather", sensorID, "outdoor", "outdoor"}
 	m.temperature.WithLabelValues(l...).Set(r.TempC)
 	m.humidity.WithLabelValues(l...).Set(r.Humidity)
 	m.dewpoint.WithLabelValues(l...).Set(r.DewPointC)

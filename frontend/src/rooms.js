@@ -1,7 +1,7 @@
 import { REFRESH_MS, cToF, filterByRange, buildRoomDatasets, computeStatus, getAspectRatio, makeWeatherTempSeries, makeUVSeries, extractDaylightPairs, applyNewAnnotation, removeAnnotation } from './data.js';
 import { CHART_ANIMATION_MS, Y_AXIS_PADDING } from './config.js';
 import { xTickCallback } from './charts.js';
-import { combinedChartOpts, buildCombinedDatasets, PARTICLE_BINS } from './room-charts.js';
+import { combinedChartOpts, buildCombinedDatasets, PARTICLE_BINS, formatLatestValues } from './room-charts.js';
 import { renderHeatmap, setupHeatmapInteraction } from './particle-heatmap.js';
 import { crosshairPlugin, registerChart, unregisterChart, getHoverTimestamp } from './crosshair.js';
 import { dragZoomPlugin, registerChart as registerZoomChart, unregisterChart as unregisterZoomChart, setZoomCallback, getDragState } from './drag-zoom.js';
@@ -218,25 +218,7 @@ function buildRoomDOM(rooms) {
 function updateLatestValues(rooms) {
     for (const room of rooms) {
         const el = document.querySelector(`.room-latest[data-room="${room.name}"]`);
-        if (!el) continue;
-        const tempData = room.temp[0]?.data;
-        const humData = room.humidity[0]?.data;
-        const dewData = room.dewpoint[0]?.data;
-        const pmData = room.pm[0]?.data;
-        if (!tempData?.length) { el.innerHTML = ''; continue; }
-
-        const lastTemp = tempData[tempData.length - 1].y;
-        const parts = [`<span><span class="value">${lastTemp.toFixed(1)}\u00B0F</span></span>`];
-        if (humData?.length) {
-            parts.push(`<span><span class="value">${humData[humData.length - 1].y.toFixed(0)}%</span> humidity</span>`);
-        }
-        if (dewData?.length) {
-            parts.push(`<span><span class="value">${dewData[dewData.length - 1].y.toFixed(1)}\u00B0F</span> dew point</span>`);
-        }
-        if (pmData?.length) {
-            parts.push(`<span>PM2.5 <span class="value">${pmData[pmData.length - 1].y.toFixed(1)}</span></span>`);
-        }
-        el.innerHTML = parts.join('');
+        if (el) el.innerHTML = formatLatestValues(room);
     }
 }
 

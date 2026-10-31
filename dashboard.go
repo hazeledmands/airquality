@@ -9,6 +9,7 @@ import (
 
 	_ "embed"
 
+	"github.com/hazel/airquality/config"
 	"github.com/hazel/airquality/logger"
 	"github.com/hazel/airquality/openmeteo"
 	"github.com/hazel/airquality/store"
@@ -75,9 +76,12 @@ func weatherReadings(rows []openmeteo.Reading) []weatherReading {
 }
 
 type sensorData struct {
-	Source   string    `json:"source"`
-	SensorID string    `json:"sensor_id"`
-	Location string    `json:"location"`
+	Source   string `json:"source"`
+	SensorID string `json:"sensor_id"`
+	Location string `json:"location"`
+	// Adjusted is true when calibration offsets from the config file were
+	// applied to temp/humidity/dew point.
+	Adjusted bool      `json:"adjusted"`
 	Readings []reading `json:"readings"`
 }
 
@@ -116,7 +120,9 @@ type acStateChange struct {
 	Reason     string `json:"reason"`
 }
 
-func groupReadings(records []logger.Record, latestLocs map[string]string) []sensorData {
+// groupReadings groups records per sensor, resolving each sensor's room and
+// applying calibration offsets from cfg. Stored records are never modified.
+func groupReadings(records []logger.Record, latestLocs map[string]string, cfg config.Config) []sensorData {
 	sensorMap := make(map[string]*sensorData)
 	var order []string
 	for _, r := range records {
@@ -130,11 +136,13 @@ func groupReadings(records []logger.Record, latestLocs map[string]string) []sens
 			sensor = &sensorData{
 				Source:   r.Source,
 				SensorID: r.SensorID,
-				Location: loc,
+				Location: cfg.Room(r.Source, r.SensorID, loc),
 			}
 			sensorMap[key] = sensor
 			order = append(order, key)
 		}
+		r, adjusted := cfg.Adjust(r)
+		sensor.Adjusted = sensor.Adjusted || adjusted
 		sensor.Readings = append(sensor.Readings, reading{
 			Timestamp: r.Timestamp.UTC().Format(time.RFC3339),
 			TempC:     r.TempC,
@@ -195,7 +203,7 @@ func groupACStates(records []logger.ACStateRecord, latestRooms map[string]string
 	return result
 }
 
-func dataHandler(cache *dataCache) http.HandlerFunc {
+func dataHandler(cache *dataCache, cfg config.Config) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		to := time.Now().UTC()
 		from := to.Add(-cacheDuration)
@@ -221,7 +229,7 @@ func dataHandler(cache *dataCache) http.HandlerFunc {
 		}
 
 		data := &dashboardData{
-			Sensors:     groupReadings(readings, cache.latestLocations()),
+			Sensors:     groupReadings(readings, cache.latestLocations(), cfg),
 			ACStates:    groupACStates(acRecords, cache.latestACRooms()),
 			Weather:     weatherReadings(weatherRows),
 			Annotations: make([]annotationJSON, 0, len(annotationRows)),

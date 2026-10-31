@@ -569,3 +569,34 @@ describe('removeAnnotation', () => {
         expect(result.sensors).toEqual(['s']);
     });
 });
+
+describe('buildRoomDatasets with multiple devices in one room', () => {
+    const sensors = [
+        {
+            source: 'sensibo', sensor_id: 's1', location: 'Downstairs', adjusted: false,
+            readings: [{ timestamp: '2026-10-31T10:00:00Z', temp_c: 21, humidity: 45, dewpoint_c: 9, pm25: 0 }],
+        },
+        {
+            source: 'purpleair', sensor_id: 'pa1', location: 'Downstairs', adjusted: true,
+            readings: [{ timestamp: '2026-10-31T10:00:00Z', temp_c: 21.5, humidity: 44, dewpoint_c: 9, pm25: 2 }],
+        },
+    ];
+
+    it('merges sensors sharing a location into one room', () => {
+        const rooms = buildRoomDatasets(sensors);
+        expect(rooms).toHaveLength(1);
+        expect(rooms[0].temp).toHaveLength(2);
+        expect(rooms[0].pm).toHaveLength(1);
+    });
+
+    it('tags each series with a device label, marking adjusted sensors', () => {
+        const [room] = buildRoomDatasets(sensors);
+        expect(room.temp.map(s => s.device)).toEqual(['Sensibo', 'PurpleAir (adj)']);
+        expect(room.pm[0].device).toBe('PurpleAir (adj)');
+    });
+
+    it('lists the room devices in order', () => {
+        const [room] = buildRoomDatasets(sensors);
+        expect(room.devices).toEqual(['Sensibo', 'PurpleAir (adj)']);
+    });
+});

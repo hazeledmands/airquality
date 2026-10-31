@@ -22,9 +22,9 @@ func TestUpdate_SensiboRecord(t *testing.T) {
 		Humidity:  50.0,
 		DewPointC: 13.2,
 	}
-	m.Update(rec)
+	m.Update(rec, "")
 
-	labels := []string{"sensibo", "abc123", "Office"}
+	labels := []string{"sensibo", "abc123", "Office", "Office"}
 	if v := testutil.ToFloat64(m.temperature.WithLabelValues(labels...)); v != 25.2 {
 		t.Errorf("temperature = %v, want 25.2", v)
 	}
@@ -59,9 +59,9 @@ func TestUpdate_PurpleAirRecord(t *testing.T) {
 		P50:       4.5,
 		P100:      0.6,
 	}
-	m.Update(rec)
+	m.Update(rec, "")
 
-	labels := []string{"purpleair", "sensor1", "outside"}
+	labels := []string{"purpleair", "sensor1", "outside", "outside"}
 	if v := testutil.ToFloat64(m.temperature.WithLabelValues(labels...)); v != 35.0 {
 		t.Errorf("temperature = %v, want 35.0", v)
 	}
@@ -113,7 +113,7 @@ func TestUpdateWeather(t *testing.T) {
 	}
 	m.UpdateWeather(r)
 
-	labels := []string{"weather", "1.3521,103.8198", "outdoor"}
+	labels := []string{"weather", "1.3521,103.8198", "outdoor", "outdoor"}
 	if v := testutil.ToFloat64(m.temperature.WithLabelValues(labels...)); v != 28.5 {
 		t.Errorf("temperature = %v, want 28.5", v)
 	}
@@ -142,16 +142,16 @@ func TestUpdateWeather(t *testing.T) {
 
 func TestUpdate_OverwritesPreviousValue(t *testing.T) {
 	m := New()
-	labels := []string{"sensibo", "abc123", "Office"}
+	labels := []string{"sensibo", "abc123", "Office", "Office"}
 
 	m.Update(logger.Record{
 		Source: "sensibo", SensorID: "abc123", Location: "Office",
 		TempC: 20.0,
-	})
+	}, "")
 	m.Update(logger.Record{
 		Source: "sensibo", SensorID: "abc123", Location: "Office",
 		TempC: 25.0,
-	})
+	}, "")
 
 	if v := testutil.ToFloat64(m.temperature.WithLabelValues(labels...)); v != 25.0 {
 		t.Errorf("temperature = %v, want 25.0 (latest)", v)
@@ -168,7 +168,7 @@ func TestHandler_ServesPrometheusFormat(t *testing.T) {
 		TempC:     25.2,
 		Humidity:  50.0,
 		DewPointC: 13.2,
-	})
+	}, "")
 
 	req := httptest.NewRequest("GET", "/metrics", nil)
 	w := httptest.NewRecorder()
@@ -192,5 +192,15 @@ func TestHandler_ServesPrometheusFormat(t *testing.T) {
 	}
 	if !strings.Contains(body, "airquality_particles_03_per_dl") {
 		t.Error("response should contain airquality_particles_03_per_dl metric definition")
+	}
+}
+
+func TestUpdate_RoomLabel(t *testing.T) {
+	m := New()
+	m.Update(logger.Record{Source: "purpleair", SensorID: "pa1", Location: "inside", TempC: 25}, "Downstairs")
+
+	labels := []string{"purpleair", "pa1", "inside", "Downstairs"}
+	if v := testutil.ToFloat64(m.temperature.WithLabelValues(labels...)); v != 25 {
+		t.Errorf("temperature = %v, want 25 (raw, with room label)", v)
 	}
 }

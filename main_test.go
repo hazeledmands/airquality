@@ -1,6 +1,7 @@
 package main
 
 import (
+	"github.com/hazel/airquality/config"
 	"testing"
 	"time"
 )
@@ -57,5 +58,36 @@ func TestParseConfig_OnceAlone(t *testing.T) {
 	}
 	if cfg.verbose {
 		t.Error("verbose should be false")
+	}
+}
+
+func TestParseConfig_ConfigFlag(t *testing.T) {
+	cfg := parseConfig([]string{"--config", "/etc/airquality/config.yaml"})
+	if cfg.configPath != "/etc/airquality/config.yaml" {
+		t.Errorf("configPath = %q", cfg.configPath)
+	}
+}
+
+func TestResolvePurpleAirHosts_EnvOverridesFile(t *testing.T) {
+	file := config.Config{PurpleAir: config.PurpleAir{Hosts: []string{"10.0.0.1"}}}
+	if got := resolvePurpleAirHosts("10.0.0.2, 10.0.0.3", file); len(got) != 2 || got[0] != "10.0.0.2" {
+		t.Errorf("env set: got %v", got)
+	}
+	if got := resolvePurpleAirHosts("", file); len(got) != 1 || got[0] != "10.0.0.1" {
+		t.Errorf("env unset: got %v", got)
+	}
+}
+
+func TestResolveWeatherClient(t *testing.T) {
+	lat, lon := 1.5, 2.5
+	file := config.Config{Weather: config.Weather{Lat: &lat, Lon: &lon}}
+	if c := resolveWeatherClient("", "", file); c == nil {
+		t.Error("file lat/lon: want client")
+	}
+	if c := resolveWeatherClient("", "", config.Config{}); c != nil {
+		t.Error("nothing set: want nil")
+	}
+	if c := resolveWeatherClient("3", "4", config.Config{}); c == nil {
+		t.Error("env lat/lon: want client")
 	}
 }

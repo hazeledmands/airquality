@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/hazel/airquality/calc"
+	"github.com/hazel/airquality/config"
 	"github.com/hazel/airquality/logger"
 	"github.com/hazel/airquality/metrics"
 	"github.com/hazel/airquality/openmeteo"
@@ -20,17 +21,19 @@ import (
 	"github.com/hazel/airquality/store"
 )
 
-type config struct {
-	interval time.Duration
-	port     int
-	verbose  bool
-	once     bool
+type options struct {
+	configPath string
+	interval   time.Duration
+	port       int
+	verbose    bool
+	once       bool
 }
 
-func parseConfig(args []string) config {
-	var cfg config
+func parseConfig(args []string) options {
+	var cfg options
 	fs := flag.NewFlagSet("airquality", flag.ExitOnError)
 
+	fs.StringVar(&cfg.configPath, "config", os.Getenv("AIRQUALITY_CONFIG"), "")
 	fs.DurationVar(&cfg.interval, "interval", 1*time.Minute, "")
 	fs.DurationVar(&cfg.interval, "i", 1*time.Minute, "")
 	fs.BoolVar(&cfg.verbose, "verbose", false, "")
@@ -50,6 +53,7 @@ func printUsage(_ *flag.FlagSet) {
 Continuously logs air quality sensor data to PostgreSQL.
 
 Options:
+      --config path         YAML config file (default $AIRQUALITY_CONFIG)
   -i, --interval duration   capture interval (default 1m)
   -p, --port int            prometheus metrics port (default 50233)
   -v, --verbose             print detailed sensor data on each capture
@@ -58,7 +62,8 @@ Options:
 
 Environment:
   SENSIBO_API_KEY     Sensibo cloud API key
-  PURPLEAIR_HOSTS     comma-separated PurpleAir sensor IPs
+  PURPLEAIR_HOSTS     comma-separated PurpleAir sensor IPs (overrides config)
+  WEATHER_LAT/LON     outdoor weather location (overrides config)
   DATABASE_URL        PostgreSQL connection string (required)
   AUTH_USER_HEADER    request header a trusted proxy sets to the signed-in
                       user (e.g. X-authentik-username); when set, writes
@@ -71,9 +76,17 @@ At least one sensor must be configured.
 func main() {
 	cfg := parseConfig(os.Args[1:])
 
+	fileCfg, err := config.Load(cfg.configPath)
+	if err != nil {
+		log.Fatalf("Config: %v", err)
+	}
+	if cfg.configPath != "" {
+		log.Printf("Loaded config from %s (%d sensor overrides)", cfg.configPath, len(fileCfg.Sensors))
+	}
+
 	sensiboKey := os.Getenv("SENSIBO_API_KEY")
-	purpleairHosts := parsePurpleAirHosts(os.Getenv("PURPLEAIR_HOSTS"))
-	weatherClient := parseWeatherClient(os.Getenv("WEATHER_LAT"), os.Getenv("WEATHER_LON"))
+	purpleairHosts := resolvePurpleAirHosts(os.Getenv("PURPLEAIR_HOSTS"), fileCfg)
+	weatherClient := resolveWeatherClient(os.Getenv("WEATHER_LAT"), os.Getenv("WEATHER_LON"), fileCfg)
 
 	if sensiboKey == "" && len(purpleairHosts) == 0 {
 		log.Fatal("No sensors configured. Set SENSIBO_API_KEY and/or PURPLEAIR_HOSTS.")
@@ -103,7 +116,7 @@ func main() {
 	}
 
 	if cfg.once {
-		captureAll(context.Background(), m, db, cache, sensiboKey, purpleairHosts, weatherClient, cfg.verbose)
+		captureAll(context.Background(), m, db, cache, fileCfg, sensiboKey, purpleairHosts, weatherClient, cfg.verbose)
 		return
 	}
 
@@ -111,7 +124,7 @@ func main() {
 		addr := fmt.Sprintf(":%d", cfg.port)
 		mux := http.NewServeMux()
 		mux.Handle("/metrics", m.Handler())
-		mux.HandleFunc("/api/data", dataHandler(cache))
+		mux.HandleFunc("/api/data", dataHandler(cache, fileCfg))
 		mux.HandleFunc("GET /api/me", authn.meHandler())
 		mux.HandleFunc("GET /login", loginHandler())
 		mux.HandleFunc("POST /api/annotations", authn.requireUser(annotationsWriteHandler(db, cache)))
@@ -125,7 +138,7 @@ func main() {
 	}()
 
 	log.Printf("Logging to database every %s (Ctrl+C to stop)", cfg.interval)
-	captureAll(context.Background(), m, db, cache, sensiboKey, purpleairHosts, weatherClient, cfg.verbose)
+	captureAll(context.Background(), m, db, cache, fileCfg, sensiboKey, purpleairHosts, weatherClient, cfg.verbose)
 
 	ticker := time.NewTicker(cfg.interval)
 	defer ticker.Stop()
@@ -136,7 +149,7 @@ func main() {
 	for {
 		select {
 		case <-ticker.C:
-			captureAll(context.Background(), m, db, cache, sensiboKey, purpleairHosts, weatherClient, cfg.verbose)
+			captureAll(context.Background(), m, db, cache, fileCfg, sensiboKey, purpleairHosts, weatherClient, cfg.verbose)
 		case <-sig:
 			log.Println("Stopping.")
 			return
@@ -144,22 +157,22 @@ func main() {
 	}
 }
 
-func captureAll(ctx context.Context, m *metrics.Metrics, db *store.Store, cache *dataCache, sensiboKey string, purpleairHosts []string, weatherClient *openmeteo.Client, verbose bool) {
+func captureAll(ctx context.Context, m *metrics.Metrics, db *store.Store, cache *dataCache, fileCfg config.Config, sensiboKey string, purpleairHosts []string, weatherClient *openmeteo.Client, verbose bool) {
 	now := time.Now()
 
 	if sensiboKey != "" {
-		captureSensibo(ctx, m, db, cache, sensiboKey, now, verbose)
+		captureSensibo(ctx, m, db, cache, fileCfg, sensiboKey, now, verbose)
 		captureACStates(ctx, db, cache, sensiboKey, verbose)
 	}
 	if len(purpleairHosts) > 0 {
-		capturePurpleAir(ctx, m, db, cache, purpleairHosts, now, verbose)
+		capturePurpleAir(ctx, m, db, cache, fileCfg, purpleairHosts, now, verbose)
 	}
 	if weatherClient != nil {
 		captureWeather(ctx, m, db, cache, weatherClient, verbose)
 	}
 }
 
-func captureSensibo(ctx context.Context, m *metrics.Metrics, db *store.Store, cache *dataCache, apiKey string, now time.Time, verbose bool) {
+func captureSensibo(ctx context.Context, m *metrics.Metrics, db *store.Store, cache *dataCache, fileCfg config.Config, apiKey string, now time.Time, verbose bool) {
 	client := sensibo.NewClient(apiKey)
 	devices, err := client.GetDevices(ctx)
 	if err != nil {
@@ -192,7 +205,7 @@ func captureSensibo(ctx context.Context, m *metrics.Metrics, db *store.Store, ca
 			log.Printf("DB write error: %v", err)
 		}
 		cache.addReading(rec)
-		m.Update(rec)
+		m.Update(rec, fileCfg.Room(rec.Source, rec.SensorID, rec.Location))
 		if verbose {
 			printVerboseRecord(rec)
 		} else {
@@ -201,7 +214,7 @@ func captureSensibo(ctx context.Context, m *metrics.Metrics, db *store.Store, ca
 	}
 }
 
-func capturePurpleAir(ctx context.Context, m *metrics.Metrics, db *store.Store, cache *dataCache, hosts []string, now time.Time, verbose bool) {
+func capturePurpleAir(ctx context.Context, m *metrics.Metrics, db *store.Store, cache *dataCache, fileCfg config.Config, hosts []string, now time.Time, verbose bool) {
 	client := purpleair.NewClient(hosts)
 	for _, host := range hosts {
 		reading, err := client.Fetch(ctx, host)
@@ -235,7 +248,7 @@ func capturePurpleAir(ctx context.Context, m *metrics.Metrics, db *store.Store, 
 			log.Printf("DB write error: %v", err)
 		}
 		cache.addReading(rec)
-		m.Update(rec)
+		m.Update(rec, fileCfg.Room(rec.Source, rec.SensorID, rec.Location))
 		if verbose {
 			printVerboseRecord(rec)
 		} else {
@@ -360,4 +373,24 @@ func parsePurpleAirHosts(hostsStr string) []string {
 		}
 	}
 	return hosts
+}
+
+// resolvePurpleAirHosts prefers PURPLEAIR_HOSTS, falling back to the config file.
+func resolvePurpleAirHosts(env string, file config.Config) []string {
+	if hosts := parsePurpleAirHosts(env); len(hosts) > 0 {
+		return hosts
+	}
+	return file.PurpleAir.Hosts
+}
+
+// resolveWeatherClient prefers WEATHER_LAT/WEATHER_LON, falling back to the
+// config file.
+func resolveWeatherClient(latEnv, lonEnv string, file config.Config) *openmeteo.Client {
+	if latEnv != "" && lonEnv != "" {
+		return parseWeatherClient(latEnv, lonEnv)
+	}
+	if file.Weather.Lat != nil && file.Weather.Lon != nil {
+		return openmeteo.NewClient(*file.Weather.Lat, *file.Weather.Lon)
+	}
+	return nil
 }

@@ -38,6 +38,15 @@ export function insertGaps(points, stepMs) {
     return result;
 }
 
+const SOURCE_NAMES = { sensibo: 'Sensibo', purpleair: 'PurpleAir' };
+
+// Human-readable device name, marked "(adj)" when the server applied
+// calibration offsets from the config file.
+export function deviceLabel(sensor) {
+    const name = SOURCE_NAMES[sensor.source] || sensor.source;
+    return sensor.adjusted ? `${name} (adj)` : name;
+}
+
 export function makeSeries(sensor, field, colorIdx, transform, stepMs = 0) {
     const color = COLORS[colorIdx % COLORS.length];
     const label = sensor.location || `${sensor.source}/${sensor.sensor_id}`;
@@ -45,7 +54,7 @@ export function makeSeries(sensor, field, colorIdx, transform, stepMs = 0) {
     const raw = sensor.readings.map(r => ({ x: r.timestamp, y: fn(r[field]) }));
     const data = stepMs > 0 ? insertGaps(raw, stepMs) : raw;
     const pointRadius = stepMs > 0 ? computePointRadii(data) : undefined;
-    return { label, data, borderColor: color, backgroundColor: color + '18', fill: false, pointRadius };
+    return { label, device: deviceLabel(sensor), data, borderColor: color, backgroundColor: color + '18', fill: false, pointRadius };
 }
 
 // Build an AC state series resampled at `stepMs` bucket intervals so it has
@@ -131,6 +140,7 @@ export function buildRoomDatasets(sensors, acStates = [], stepMs = 0) {
     const makeRoom = (name, colorIdx) => ({
         name,
         color: COLORS[colorIdx % COLORS.length],
+        devices: [],
         temp: [],
         humidity: [],
         dewpoint: [],
@@ -154,6 +164,7 @@ export function buildRoomDatasets(sensors, acStates = [], stepMs = 0) {
             if (t > maxSensorMs) maxSensorMs = t;
         }
         const room = roomMap.get(name);
+        room.devices.push(deviceLabel(s));
         room.temp.push(makeSeries(s, 'temp_c', i, cToF, stepMs));
         room.humidity.push(makeSeries(s, 'humidity', i, null, stepMs));
         room.dewpoint.push(makeSeries(s, 'dewpoint_c', i, cToF, stepMs));

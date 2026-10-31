@@ -40,12 +40,35 @@ export WEATHER_LAT="37.8313"
 export WEATHER_LON="-122.2853"
 ```
 
+### Config file (optional)
+
+Non-secret settings can live in a YAML file passed with `--config` (or `AIRQUALITY_CONFIG`). Environment variables take precedence over the file, so an env-only setup keeps working. Secrets (`SENSIBO_API_KEY`, `DATABASE_URL`) are only ever read from the environment. Unknown keys are a startup error.
+
+```yaml
+purpleair:
+  hosts: [192.168.1.218]       # PURPLEAIR_HOSTS overrides
+weather:
+  lat: 37.8313                 # WEATHER_LAT / WEATHER_LON override
+  lon: -122.2853
+sensors:                       # keyed by source/sensor_id
+  purpleair/a4:e5:7c:28:49:7:
+    room: Downstairs           # show this sensor in the Downstairs card
+    offsets:                   # calibration, added at display time
+      temp_c: -4.4
+      humidity: 4
+```
+
+**Rooms.** Sensors are grouped into dashboard cards by the location they report (the Sensibo room name, or the PurpleAir's `inside`/`outside`). Set `room` to put several devices in one card. This applies when data is read, so past readings regroup too.
+
+**Offsets.** Devices in the same room often disagree. The PurpleAir's temperature/humidity sensor sits inside its warm case and typically reads about 8°F high and about 4% RH low. `offsets` are added to `temp_c` and `humidity` when serving the dashboard, and dew point is recomputed from the corrected values. Stored data and Prometheus gauges stay raw. Adjusted devices show as "(adj)" in the dashboard.
+
 ## Usage
 
 ```
 Usage: airquality [options]
 
 Options:
+      --config path         YAML config file (default $AIRQUALITY_CONFIG)
   -i, --interval duration   capture interval (default 1m)
   -o, --output string       output CSV file path (default "airquality.csv")
       --ac-output string    AC state changes CSV file path (default "acstates.csv")
@@ -91,7 +114,7 @@ With it set, the proxy must gate `/login` and `/api/me` and every non-GET reques
 
 ## Dashboard
 
-In continuous mode, a web dashboard is served at `http://localhost:50233/` showing live charts. The default view groups all metrics (temperature, humidity, dew point, PM2.5, AC state) per room. A "By Metric" view at `/by-metric` shows one chart per metric type. Both views auto-refresh every 60 seconds. The date-range picker includes quick presets (1h, 8h, 1d, 3d, 1w) and prev/next buttons to pan through time. Hovering over any chart shows a synced vertical crosshair line across all charts at the same timestamp. A JSON API is available at `/api/data`.
+In continuous mode, a web dashboard is served at `http://localhost:50233/` showing live charts. The default view groups all metrics (temperature, humidity, dew point, PM2.5, AC state) per room. A "By Metric" view at `/by-metric` shows one chart per metric type. Both views auto-refresh every 60 seconds. When a room has more than one device, every device's lines are drawn in the same per-metric colors. The tooltip names each device ("Temperature · PurpleAir (adj)"), the legend keeps one entry per metric (clicking it toggles all of that metric's lines), and the latest-values strip shows each device's reading ("70.1 / 70.8°F") followed by the device names in the same order. The date-range picker includes quick presets (1h, 8h, 1d, 3d, 1w) and prev/next buttons to pan through time. Hovering over any chart shows a synced vertical crosshair line across all charts at the same timestamp. A JSON API is available at `/api/data`.
 
 When `WEATHER_LAT`/`WEATHER_LON` are configured, the rooms view also shows:
 - **Outdoor weather card** — current conditions strip (temp, humidity, wind, precip) plus a dual-axis chart of outdoor temperature and UV index
@@ -104,7 +127,7 @@ Port `50233` is the production default. When testing locally, use a different po
 
 Prometheus metrics are served at `http://localhost:50233/metrics` (port configurable with `--port`).
 
-Exported metrics (all with `source`, `sensor_id`, `location` labels):
+Exported metrics (all with `source`, `sensor_id`, `location`, `room` labels). `location` is what the device reports; `room` is the room from the config file (equal to `location` if not overridden). Values are raw, without calibration offsets:
 
 | Metric | Description |
 |--------|-------------|
@@ -158,7 +181,7 @@ docker run --rm \
   airquality:local
 ```
 
-The image runs as a non-root user and expects all configuration via environment variables (see [Setup](#setup)).
+The image runs as a non-root user and reads configuration from environment variables and an optional config file (see [Setup](#setup)).
 
 ## Building
 
