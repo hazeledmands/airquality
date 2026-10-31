@@ -143,6 +143,10 @@ ghcr.io/hazeledmands/airquality:latest
 ghcr.io/hazeledmands/airquality:<short-sha>
 ```
 
+Those builds never deploy themselves. Releasing does: bump `VERSION`, commit it to `main`, then run the **Release** workflow (`gh workflow run release.yml -f version=X.Y.Z`). It verifies the build, publishes `airquality:X.Y.Z` (plus `X.Y` and the short SHA), and tags the commit `vX.Y.Z`. The homelab's argocd-image-updater promotes every release within `^1.0.0` to the cluster within a few minutes.
+
+The version is the deployment contract. **MAJOR** means the deployment must change first — a new required env var, new infrastructure, a new expectation of the proxy in front, or a migration the previous build can't tolerate; the updater won't cross it, and the homelab chart change lands with a widened constraint. **MINOR** is a backward-compatible feature, **PATCH** a backward-compatible fix.
+
 To build locally:
 
 ```bash
