@@ -8,7 +8,7 @@ RUN npm run build
 # Result: /app/rooms.html
 
 # Stage 2: Build the Go binary (embeds rooms.html)
-FROM golang:1.25-bookworm AS builder
+FROM golang:1.27-trixie AS builder
 WORKDIR /app
 # Cache module downloads separately from source so they survive source-only changes
 COPY go.mod go.sum ./
@@ -20,7 +20,7 @@ COPY --from=frontend /app/rooms.html .
 RUN go build -buildvcs=false -o airquality .
 
 # Stage 3: Minimal runtime image
-FROM debian:bookworm-slim
+FROM debian:trixie-slim
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates \
     && rm -rf /var/lib/apt/lists/*
