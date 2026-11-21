@@ -95,7 +95,10 @@ export function tempestPanelOpts(panel, ar) {
         break;
     case 'direction':
         // A thin strip: direction needs a compass axis, not the speed axis.
+        // The wind panel right above labels the shared time axis, so the
+        // strip hides its own time labels and gives the height to the plot.
         aspect = secondaryAspect(ar) * 2.2;
+        scales.x.ticks = { ...scales.x.ticks, display: false };
         scales.yDir = axis('left', '', {
             min: 0, max: 360,
             ticks: { color: '#666', stepSize: 180, autoSkip: false, callback: (val) => DIRS[val] ?? '' },

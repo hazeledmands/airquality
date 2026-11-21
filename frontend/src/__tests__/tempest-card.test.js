@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 vi.mock('../charts.js', () => ({ xTickCallback: vi.fn() }));
 
-import { buildTempestSection, updateTempestSection, tooltipLabel, secondaryAspect, buildEmptyTempestSection } from '../tempest-card.js';
+import { buildTempestSection, updateTempestSection, tooltipLabel, secondaryAspect, buildEmptyTempestSection, tempestPanelOpts } from '../tempest-card.js';
 
 // Minimal Chart stand-in: records config, supports visibility like Chart.js.
 class FakeChart {
@@ -112,5 +112,19 @@ describe('secondaryAspect', () => {
     it('is shorter on desktop and unchanged on phones', () => {
         expect(secondaryAspect(4)).toBeCloseTo(6.4);
         expect(secondaryAspect(2.4)).toBe(2.4);
+    });
+});
+
+// The direction strip sits directly under the wind panel, which already
+// labels the time axis; repeating the labels in a strip this thin crowds its
+// compass labels, especially on phones.
+describe('wind direction strip', () => {
+    it('leaves time labels to the wind panel above', () => {
+        expect(tempestPanelOpts('direction', 2.4).scales.x.ticks.display).toBe(false);
+        expect(tempestPanelOpts('wind', 2.4).scales.x.ticks.display).not.toBe(false);
+    });
+    it('is tall enough on a phone to keep N, S and N apart', () => {
+        // 343 px wide plot / aspect >= ~60 px of chart height
+        expect(343 / tempestPanelOpts('direction', 2.4).aspectRatio).toBeGreaterThanOrEqual(60);
     });
 });

@@ -1,6 +1,7 @@
 package metrics
 
 import (
+	"math"
 	"strconv"
 
 	"github.com/hazel/airquality/calc"
@@ -140,8 +141,9 @@ func (m *Metrics) UpdateTempest(o tempest.Observation, station, room string, ele
 	setOrDelete(m.humidity, l, o.RelativeHumidity)
 	var slp *float64
 	if o.StationPressureMB != nil {
-		v := calc.SeaLevelPressure(*o.StationPressureMB, elevationM)
-		slp = &v
+		if v := calc.SeaLevelPressure(*o.StationPressureMB, elevationM); !math.IsNaN(v) && !math.IsInf(v, 0) {
+			slp = &v
+		}
 	}
 	setOrDelete(m.pressure, l, slp)
 	setOrDelete(m.uvindex, l, o.UVIndex)

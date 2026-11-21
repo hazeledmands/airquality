@@ -61,8 +61,8 @@ Data comes from the WeatherFlow cloud, not the hub's UDP broadcast on port 50222
   airquality tempest-backfill --from 2026-10-01 --to 2026-10-08
   ```
 
-  It requests one day at a time (one-minute data is only served for short ranges; six days comes back in 30-minute buckets, which the client refuses), waits `--delay` (default 1s) between requests (longer if the API sends `Retry-After`), and upserts. Re-running it is safe and also picks up Rain Check corrections. A running server serves the dashboard from an in-memory cache loaded at startup, so backfilled history appears there after the server restarts (Prometheus and the database have it immediately).
-- **Testing against a stub.** `TEMPEST_API_URL` and `TEMPEST_WS_URL` override the WeatherFlow REST and WebSocket base URLs.
+  It requests one day at a time (one-minute data is only served for short ranges; six days comes back in 30-minute buckets, which the client refuses), waits `--delay` (default 1s) between requests (longer if the API sends `Retry-After`), and upserts. Re-running it is safe and also picks up Rain Check corrections. Backfill writes to Postgres only. A running server serves the dashboard from an in-memory cache loaded at startup, so backfilled history appears there after the server restarts. Prometheus never gets it: its gauges carry only the latest live observation, and history lives in the database.
+- **Testing against a stub.** `TEMPEST_API_URL` and `TEMPEST_WS_URL` override the WeatherFlow REST and WebSocket base URLs. The token goes to whatever host they name, so they must be `https://` / `wss://`, except to a loopback host (`localhost`, `127.0.0.1`, `::1`), where `http://` / `ws://` is allowed for a local stub. Any other scheme or host is a startup error. The effective host, never the full URL, is logged.
 
 ### Config file (optional)
 
@@ -174,7 +174,7 @@ Exported metrics (all with `source`, `sensor_id`, `location`, `room` labels). `l
 | `airquality_temperature_celsius` | Temperature in °C |
 | `airquality_humidity_percent` | Relative humidity % |
 | `airquality_dewpoint_celsius` | Dew point in °C |
-| `airquality_pressure_mbar` | Atmospheric pressure |
+| `airquality_pressure_mbar` | Atmospheric pressure: station (uncorrected) pressure for PurpleAir; sea-level pressure for Open-Meteo and the Tempest |
 | `airquality_pm1_ugm3` | PM1.0 µg/m³ |
 | `airquality_pm25_ugm3` | PM2.5 µg/m³ |
 | `airquality_pm10_ugm3` | PM10 µg/m³ |

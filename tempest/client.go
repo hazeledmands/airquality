@@ -15,6 +15,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -40,6 +41,38 @@ type Client struct {
 
 	token string
 	http  *http.Client
+
+	warnMu    sync.Mutex
+	warnState map[string]*warnState
+}
+
+// warnWindow is how often each kind of data warning may be logged.
+const warnWindow = time.Hour
+
+type warnState struct {
+	last       time.Time
+	suppressed int
+}
+
+// warnLimited logs at most once per key per warnWindow, reporting how many
+// were suppressed in between, so one bad field can't flood the log.
+func (c *Client) warnLimited(key, format string, args ...any) {
+	c.warnMu.Lock()
+	defer c.warnMu.Unlock()
+	if c.warnState == nil {
+		c.warnState = make(map[string]*warnState)
+	}
+	now := c.Now()
+	st, ok := c.warnState[key]
+	if ok && now.Sub(st.last) < warnWindow {
+		st.suppressed++
+		return
+	}
+	if ok && st.suppressed > 0 {
+		format += fmt.Sprintf(" (%d similar suppressed in the last %s)", st.suppressed, warnWindow)
+	}
+	c.warnState[key] = &warnState{last: now}
+	c.Warn(format, args...)
 }
 
 // NewClient returns a client for the given personal access token.
@@ -240,7 +273,14 @@ func (c *Client) Stations(ctx context.Context) ([]Station, error) {
 	}
 	out := make([]Station, 0, len(raw))
 	for _, s := range raw {
-		st := Station{ID: s.StationID, Name: s.Name, Timezone: s.Timezone, ElevationM: s.StationMeta.Elevation}
+		// Clamped to the range of inhabited elevations: a wild value would
+		// make sea-level pressure non-finite.
+		elev := s.StationMeta.Elevation
+		if math.IsNaN(elev) {
+			elev = 0
+		}
+		elev = min(max(elev, -500), 9000)
+		st := Station{ID: s.StationID, Name: s.Name, Timezone: s.Timezone, ElevationM: elev}
 		if s.CreatedEpoch > 0 {
 			st.Created = time.Unix(s.CreatedEpoch, 0).UTC()
 		}
@@ -324,12 +364,14 @@ func (c *Client) DeviceObservations(ctx context.Context, deviceID int, start, en
 		o, rejected, ok := ParseObsST(deviceID, row)
 		if !ok || o.Time.Before(lo) || o.Time.After(hi) {
 			if ok {
-				c.Warn("tempest device %d: dropped observation at %s, outside %s..%s", deviceID, o.Time.Format(time.RFC3339), lo.UTC().Format(time.RFC3339), hi.UTC().Format(time.RFC3339))
+				c.warnLimited(fmt.Sprintf("window/%d", deviceID), "tempest device %d: dropped observation at %s, outside %s..%s",
+					deviceID, o.Time.Format(time.RFC3339), lo.UTC().Format(time.RFC3339), hi.UTC().Format(time.RFC3339))
 			}
 			continue
 		}
-		if len(rejected) > 0 {
-			c.Warn("tempest device %d at %s: implausible %s stored as NULL", deviceID, o.Time.Format(time.RFC3339), strings.Join(rejected, ", "))
+		for _, field := range rejected {
+			c.warnLimited(fmt.Sprintf("field/%d/%s", deviceID, field), "tempest device %d at %s: implausible %s stored as NULL",
+				deviceID, o.Time.Format(time.RFC3339), field)
 		}
 		out = append(out, o)
 	}

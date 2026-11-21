@@ -2,6 +2,7 @@ package tempest
 
 import (
 	"context"
+	"fmt"
 	"math"
 	"net/http"
 	"net/http/httptest"
@@ -187,3 +188,55 @@ func TestListener_FiltersDevicesStaleEventsAndFloods(t *testing.T) {
 }
 
 func itoa(n int64) string { return strconv.FormatInt(n, 10) }
+
+// A wild elevation would make sea-level pressure NaN/Inf, which breaks JSON
+// encoding of the whole /api/data response.
+func TestStations_ClampsElevation(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`{"status":{"status_code":0},"stations":[
+			{"station_id":1,"station_meta":{"elevation":1e9},"devices":[]},
+			{"station_id":2,"station_meta":{"elevation":-99999},"devices":[]},
+			{"station_id":3,"station_meta":{"elevation":50},"devices":[]}]}`))
+	}))
+	defer srv.Close()
+	st, err := newTestClient(srv, "tok").Stations(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st[0].ElevationM != 9000 || st[1].ElevationM != -500 || st[2].ElevationM != 50 {
+		t.Errorf("elevations = %v %v %v", st[0].ElevationM, st[1].ElevationM, st[2].ElevationM)
+	}
+}
+
+// One misbehaving field must not flood the log every minute.
+func TestImplausibleValueWarningsAreRateLimited(t *testing.T) {
+	now := time.Unix(1789568400, 0)
+	rows := make([]string, 0, 60)
+	for i := range 60 {
+		rows = append(rows, "["+itoa(1789564800+int64(i)*60)+",0,0,0,0,3,1000,10,50,0,0,0,0,40000]")
+	}
+	body := `{"status":{"status_code":0},"obs":[` + strings.Join(rows, ",") + `]}`
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.Write([]byte(body)) }))
+	defer srv.Close()
+	c := newTestClient(srv, "tok")
+	c.Now = func() time.Time { return now }
+	var lines []string
+	c.Warn = func(format string, args ...any) { lines = append(lines, fmt.Sprintf(format, args...)) }
+	for range 3 { // three polls
+		if _, err := c.DeviceObservations(t.Context(), 1, now.Add(-time.Hour), now); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if len(lines) != 1 {
+		t.Fatalf("warnings = %d, want 1 per field per window:\n%s", len(lines), strings.Join(lines, "\n"))
+	}
+	if !strings.Contains(lines[0], "precip_type") {
+		t.Errorf("warning = %q", lines[0])
+	}
+	// After the window, one more line reports how many were suppressed.
+	now = now.Add(2 * time.Hour)
+	c.DeviceObservations(t.Context(), 1, now.Add(-3*time.Hour), now)
+	if len(lines) != 2 || !strings.Contains(lines[1], "suppressed") {
+		t.Errorf("after window: %v", lines)
+	}
+}
