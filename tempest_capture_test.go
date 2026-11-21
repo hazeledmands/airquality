@@ -684,3 +684,23 @@ func TestDownsampleTempest_DailyTotalAcrossMidnightKeepsDayTotal(t *testing.T) {
 		t.Errorf("rain max = %v, want 0.4", ptrVal(got[0].RainMaxMM))
 	}
 }
+
+// Values from a real 9-minute bucket of light easterly wind: the served mean
+// must be the speed-weighted vector mean, ~70.7° (ENE), not mirrored (~290°)
+// or rotated. Pins the sin/cos/atan2 argument order and normalisation.
+func TestVectorMeanDirection_EasterlyBucket(t *testing.T) {
+	dirs := []float64{38, 59, 79, 72, 75, 93, 69, 65, 73}
+	speeds := []float64{0.6, 0.6, 0.9, 0.6, 0.4, 0.6, 0.6, 0.6, 0.8}
+	var recs []tempest.Observation
+	for i := range dirs {
+		recs = append(recs, tempest.Observation{WindDirectionDeg: fp(dirs[i]), WindAvgMS: fp(speeds[i])})
+	}
+	got := vectorMeanDirection(recs)
+	if got == nil || *got < 69 || *got > 72 {
+		t.Errorf("mean = %v, want ~70.7", ptrVal(got))
+	}
+	west := vectorMeanDirection([]tempest.Observation{{WindDirectionDeg: fp(260), WindAvgMS: fp(1)}, {WindDirectionDeg: fp(280), WindAvgMS: fp(1)}})
+	if west == nil || absf(*west-270) > 1e-6 {
+		t.Errorf("west mean = %v, want 270", ptrVal(west))
+	}
+}

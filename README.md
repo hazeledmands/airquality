@@ -153,7 +153,7 @@ When `WEATHER_LAT`/`WEATHER_LON` are configured, the rooms view also shows:
 When `TEMPEST_TOKEN` is configured, a **Tempest** section follows. Its latest-values strip is built from the newest raw (not downsampled) observation in the range and says "as of" when that is more than 5 minutes old: temperature, humidity, dew point, wind with compass direction and gusts, rain today and current rate, UV, solar radiation, illuminance, recent strikes, sea-level pressure (inHg) with its 3-hour trend, battery. Below it, panels share the dashboard's time axis:
 - **Outdoor**: temperature, dew point, humidity on the same °F and % axes as the room charts, so outdoor and indoor line up
 - **Wind**: average (mph) inside a shaded lull–gust band
-- **Wind direction**: a thin strip of dots on a compass axis (none in calm air)
+- **Wind direction**: a thin strip of dots for where the wind blows from, on a compass axis that increases upward with N, E, S, W and N labelled (no dot in calm air)
 - **Rain**: rate (in/h) as an area, the wettest single minute as a line so peaks survive downsampling, the total since local midnight and its Rain Check correction, hail, and rain-start markers
 - **Sun**: UV index and solar radiation (W/m²); illuminance is in the legend, hidden by default
 - **Lightning**: average strike distance per bucket, sized by strike count, plus each individual strike; collapses to a one-line note when there were none

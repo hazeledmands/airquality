@@ -128,3 +128,44 @@ describe('wind direction strip', () => {
         expect(343 / tempestPanelOpts('direction', 2.4).aspectRatio).toBeGreaterThanOrEqual(60);
     });
 });
+
+// Regression: the strip used stepSize 180, so Chart.js drew ticks only at
+// 0/180/360 (N, S, N). An easterly (e.g. 70°) sat in the same unlabelled band
+// a westerly would, a fifth of the way up from "N", which read as northerly
+// or mirrored. Every cardinal point must be labelled.
+describe('wind direction axis', () => {
+    const yDir = () => tempestPanelOpts('direction', 4).scales.yDir;
+
+    it('labels N, E, S, W and N at 0, 90, 180, 270, 360', () => {
+        const scale = { ticks: [{ value: 0 }, { value: 180 }, { value: 360 }] };
+        yDir().afterBuildTicks(scale);
+        const cb = yDir().ticks.callback;
+        expect(scale.ticks.map(t => [t.value, cb(t.value)])).toEqual([
+            [0, 'N'], [90, 'E'], [180, 'S'], [270, 'W'], [360, 'N'],
+        ]);
+    });
+
+    it('increases upward, so east sits below south and west above it', () => {
+        const opts = yDir();
+        expect(opts.reverse).toBeFalsy();
+        expect(opts.min).toBe(0);
+        expect(opts.max).toBe(360);
+    });
+
+    it('says the direction is where the wind blows from', () => {
+        const { section } = render({ enabled: true, station: { name: 'Home' }, observations: [ob(0, { wind_avg_ms: 1, wind_direction_deg: 70 })], latest: null, events: [] });
+        const label = section.querySelector('.tempest-panel[data-panel="direction"] .panel-label').textContent;
+        expect(label).toMatch(/from/i);
+    });
+
+    it('has room for five labels on a phone', () => {
+        // 343 px plot width on a 375 px screen; five 10 px labels need ~85 px.
+        expect(343 / tempestPanelOpts('direction', 2.4).aspectRatio).toBeGreaterThanOrEqual(85);
+    });
+
+    it('tooltips name the compass point the wind comes from', () => {
+        const { panel } = render({ enabled: true, station: { name: 'Home' }, observations: [ob(0, { wind_avg_ms: 1, wind_direction_deg: 70 })], latest: null, events: [] });
+        const ds = panel('direction').chart.data.datasets[0];
+        expect(tooltipLabel({ dataset: ds, raw: ds.data[0], parsed: { y: 70 } })).toBe('From: 70° ENE');
+    });
+});
