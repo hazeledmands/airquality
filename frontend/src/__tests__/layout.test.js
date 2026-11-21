@@ -1,16 +1,49 @@
 import { describe, it, expect, vi } from 'vitest';
-import { isCompact, sizingFor, sizeOptions, CHART_HEIGHTS, zoomRange, resizeGate, compactTick, roundTick, niceRange, compactRangeLabel } from '../layout.js';
+import { readFileSync } from 'node:fs';
+import { isCompact, COMPACT_QUERY, sizingFor, sizeOptions, CHART_HEIGHTS, zoomRange, resizeGate, compactTick, roundTick, niceRange, compactRangeLabel } from '../layout.js';
 
 describe('isCompact', () => {
     it('is true for phones in portrait and landscape', () => {
-        expect(isCompact(390, 664)).toBe(true);   // iPhone 13
-        expect(isCompact(320, 568)).toBe(true);   // iPhone SE
-        expect(isCompact(750, 340)).toBe(true);   // iPhone 13 landscape
-        expect(isCompact(863, 360)).toBe(true);   // Pixel 7 landscape
+        expect(isCompact(390, 664, true)).toBe(true);   // iPhone 13
+        expect(isCompact(320, 568, true)).toBe(true);   // iPhone SE
+        expect(isCompact(750, 340, true)).toBe(true);   // iPhone 13 landscape
+        expect(isCompact(863, 360, true)).toBe(true);   // Pixel 7 landscape
     });
     it('is false for tablets and desktops', () => {
-        expect(isCompact(700, 900)).toBe(false);
-        expect(isCompact(1280, 800)).toBe(false);
+        expect(isCompact(700, 900, true)).toBe(false);
+        expect(isCompact(1280, 800, false)).toBe(false);
+    });
+    // Regression: a short desktop window was treated as a phone and mouse
+    // users lost tooltips. Only a coarse pointer makes "short" mean phone.
+    it('keeps a short desktop window (fine pointer) in the desktop layout', () => {
+        expect(isCompact(1280, 450, false)).toBe(false);
+        expect(isCompact(900, 400, false)).toBe(false);
+    });
+    it('still treats a narrow window as compact whatever the pointer', () => {
+        expect(isCompact(500, 900, false)).toBe(true);
+    });
+    it('uses the same media query as the CSS when the browser can evaluate it', () => {
+        const seen = [];
+        const prev = globalThis.matchMedia;
+        globalThis.matchMedia = (q) => { seen.push(q); return { matches: true }; };
+        try {
+            expect(isCompact()).toBe(true);
+            expect(seen).toEqual([COMPACT_QUERY]);
+        } finally {
+            globalThis.matchMedia = prev;
+        }
+    });
+});
+
+describe('COMPACT_QUERY', () => {
+    it('applies the height clause only with a coarse pointer', () => {
+        expect(COMPACT_QUERY).toBe('(max-width: 600px), (max-height: 500px) and (pointer: coarse)');
+    });
+    // rooms.html cannot import JS, so this keeps the two definitions in sync.
+    it('is exactly the media query rooms.html uses for the phone layout', () => {
+        const html = readFileSync(new URL('../../rooms.html', import.meta.url), 'utf8');
+        const queries = [...html.matchAll(/@media\s*([^{]*max-height[^{]*)\{/g)].map(m => m[1].trim());
+        expect(queries).toEqual([COMPACT_QUERY]);
     });
 });
 
@@ -68,6 +101,41 @@ describe('resizeGate', () => {
         vi.advanceTimersByTime(200);
         expect(fn).not.toHaveBeenCalled(); // width unchanged since setup
         vi.useRealTimers();
+    });
+    // A height-only resize across 500 px (coarse pointer) flips the CSS
+    // layout; the charts must be re-sized with it.
+    it('runs when compactness changes even if the width does not', () => {
+        vi.useFakeTimers();
+        const fn = vi.fn();
+        let compact = false;
+        const onResize = resizeGate(fn, 150, () => `390|${compact}`);
+        compact = true; onResize();
+        vi.advanceTimersByTime(200);
+        expect(fn).toHaveBeenCalledTimes(1);
+        onResize();
+        vi.advanceTimersByTime(200);
+        expect(fn).toHaveBeenCalledTimes(1);
+        vi.useRealTimers();
+    });
+    it('keys on width and compactness by default', () => {
+        vi.useFakeTimers();
+        const fn = vi.fn();
+        const prev = [globalThis.innerWidth, globalThis.innerHeight, globalThis.matchMedia];
+        let coarseShort = false;
+        globalThis.innerWidth = 1000; globalThis.innerHeight = 800;
+        globalThis.matchMedia = () => ({ matches: coarseShort });
+        try {
+            const onResize = resizeGate(fn, 150);
+            globalThis.innerHeight = 450; coarseShort = true; onResize();
+            vi.advanceTimersByTime(200);
+            expect(fn).toHaveBeenCalledTimes(1);
+            globalThis.innerHeight = 440; onResize(); // still compact, same width
+            vi.advanceTimersByTime(200);
+            expect(fn).toHaveBeenCalledTimes(1);
+        } finally {
+            [globalThis.innerWidth, globalThis.innerHeight, globalThis.matchMedia] = prev;
+            vi.useRealTimers();
+        }
     });
     it('runs once after the width settles', () => {
         vi.useFakeTimers();
