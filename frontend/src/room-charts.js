@@ -1,4 +1,4 @@
-import { CHART_ANIMATION_MS } from './config.js';
+import { CHART_ANIMATION_MS, pinAxisWidth } from './config.js';
 import { xTickCallback } from './charts.js';
 import { makeWeatherTempSeries } from './data.js';
 
@@ -96,6 +96,7 @@ export function combinedChartOpts(ar, room) {
                 title: { display: true, text: '\u00B0F', color: '#888', font: { size: 11 } },
                 ticks: { color: '#888' },
                 grid: { color: '#ffffff06' },
+                afterFit: pinAxisWidth,
             },
             y1: {
                 type: 'linear',
@@ -105,6 +106,7 @@ export function combinedChartOpts(ar, room) {
                 grid: { drawOnChartArea: false },
                 min: 0,
                 max: 100,
+                afterFit: pinAxisWidth,
             },
         },
         plugins: {

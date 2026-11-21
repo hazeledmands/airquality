@@ -45,6 +45,8 @@ ipset create allowed-domains hash:net
 ALLOWED_DOMAINS=(
     # App APIs
     home.sensibo.com
+    swd.weatherflow.com
+    ws.weatherflow.com
     # Anthropic / Claude
     api.anthropic.com
     claude.ai

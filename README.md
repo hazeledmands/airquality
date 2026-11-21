@@ -6,6 +6,7 @@ Supports:
 - [Sensibo](https://sensibo.com/) Air/Sky — temperature, humidity, dew point
 - [PurpleAir](https://www.purpleair.com/) (local API) — PM1.0/2.5/10, AQI, temperature, humidity, dew point, pressure, VOC
 - [Open-Meteo](https://open-meteo.com/) — outdoor temperature, humidity, UV index, wind, precipitation, sunrise/sunset (no API key required)
+- [WeatherFlow Tempest](https://tempest.earth/) (cloud API) — every field the station reports each minute (temperature, humidity, pressure, wind lull/average/gust/direction, rain and Rain Check rain, precipitation type, UV, solar radiation, illuminance, lightning count and distance, battery), plus individual lightning strikes and rain-start events
 
 ## Setup
 
@@ -19,7 +20,7 @@ export SENSIBO_API_KEY="your-api-key"    # from https://home.sensibo.com/me/api
 export PURPLEAIR_HOSTS="192.168.1.218,192.168.1.219"
 ```
 
-At least one must be set.
+At least one sensor source (Sensibo, PurpleAir or Tempest) must be set.
 
 ### PostgreSQL (optional)
 
@@ -40,9 +41,32 @@ export WEATHER_LAT="37.8313"
 export WEATHER_LON="-122.2853"
 ```
 
+### WeatherFlow Tempest (optional)
+
+Set `TEMPEST_TOKEN` to a personal access token (Tempest web app → Settings → Data Authorizations). The app finds the first station the token can see that has a Tempest; set `TEMPEST_STATION_ID` (or `tempest.station_id` in the config file) to pick another. Requires `DATABASE_URL` and the `tempest_observations`/`tempest_events` tables from `supabase/migrations/20261120000000_create_tempest.sql`. If the token is set but the tables are missing, Tempest is disabled with a `TEMPEST DISABLED` log line and `airquality_tempest_enabled 0`, and everything else keeps running.
+
+```sh
+export TEMPEST_TOKEN="..."          # secret: environment only
+export TEMPEST_STATION_ID="123456"  # optional
+```
+
+Data comes from the WeatherFlow cloud, not the hub's UDP broadcast on port 50222: broadcasts don't cross subnets, and the cloud keeps history, so gaps of up to 24 hours fill themselves in on the next poll and longer ones can be backfilled.
+
+- **Observations.** The REST API is polled every minute (`tempest.poll_interval`), independent of `--interval`. Each poll asks for everything after the newest stored row, so an outage of up to 24 hours fills itself in on the next poll. Rows are keyed on (device, timestamp) and upserted, so overlapping fetches never duplicate. Once a day the last 72 hours are fetched again to pick up WeatherFlow's Rain Check corrections, which arrive during the following local day; a failed recheck waits a day rather than retrying every minute. A stored value is never overwritten with null. Implausible values (out-of-range or non-finite, e.g. a precipitation type of 40000) are stored as NULL with a log line, rows outside the requested window or in the future are dropped, and a row the database still rejects is skipped on its own, so one bad row never stalls ingestion.
+- **Events.** A WebSocket connection (`wss://ws.weatherflow.com`) records each lightning strike (time, distance, energy) and rain start, which REST keeps only as per-minute counts. It reconnects with backoff, keeps only events from the selected devices with timestamps within 10 minutes of now, and caps delivery at 600 events a minute. Two strikes in the same second are two rows; a replayed event is stored and counted once. Turn it off with `tempest.events: false`. The 3-second `rapid_wind` stream is not stored: the per-minute lull, average and gust already capture it at about 1/20 the volume.
+- **Backfill.** `airquality tempest-backfill` loads history, by default from the day the station was created:
+
+  ```sh
+  airquality tempest-backfill                          # everything since the station was created
+  airquality tempest-backfill --from 2026-10-01 --to 2026-10-08
+  ```
+
+  It requests one day at a time (one-minute data is only served for short ranges; six days comes back in 30-minute buckets, which the client refuses), waits `--delay` (default 1s) between requests (longer if the API sends `Retry-After`), and upserts. Re-running it is safe and also picks up Rain Check corrections. A running server serves the dashboard from an in-memory cache loaded at startup, so backfilled history appears there after the server restarts (Prometheus and the database have it immediately).
+- **Testing against a stub.** `TEMPEST_API_URL` and `TEMPEST_WS_URL` override the WeatherFlow REST and WebSocket base URLs.
+
 ### Config file (optional)
 
-Non-secret settings can live in a YAML file passed with `--config` (or `AIRQUALITY_CONFIG`). Environment variables take precedence over the file, so an env-only setup keeps working. Secrets (`SENSIBO_API_KEY`, `DATABASE_URL`) are only ever read from the environment. Unknown keys are a startup error.
+Non-secret settings can live in a YAML file passed with `--config` (or `AIRQUALITY_CONFIG`). Environment variables take precedence over the file, so an env-only setup keeps working. Secrets (`SENSIBO_API_KEY`, `TEMPEST_TOKEN`, `DATABASE_URL`) are only ever read from the environment. Unknown keys are a startup error.
 
 ```yaml
 purpleair:
@@ -50,6 +74,10 @@ purpleair:
 weather:
   lat: 37.8313                 # WEATHER_LAT / WEATHER_LON override
   lon: -122.2853
+tempest:
+  station_id: 123456           # TEMPEST_STATION_ID overrides; default: first with a Tempest
+  poll_interval: 1m            # REST poll cadence (minimum 30s)
+  events: true                 # WebSocket lightning/rain-start listener
 sensors:                       # keyed by source/sensor_id
   purpleair/a4:e5:7c:28:49:7:
     room: Downstairs           # show this sensor in the Downstairs card
@@ -66,6 +94,7 @@ sensors:                       # keyed by source/sensor_id
 
 ```
 Usage: airquality [options]
+       airquality tempest-backfill [--from DATE] [--to DATE] [--station ID] [--delay 1s]
 
 Options:
       --config path         YAML config file (default $AIRQUALITY_CONFIG)
@@ -121,6 +150,17 @@ When `WEATHER_LAT`/`WEATHER_LON` are configured, the rooms view also shows:
 - **Daylight shading** — non-daylight hours are shaded on all charts using the sunrise/sunset times from Open-Meteo
 - **Outdoor temp overlay** — a toggle adds outdoor temperature as a dashed line on each indoor room chart for comparison; state persists in the URL (`?outdoorTemp=1`)
 
+When `TEMPEST_TOKEN` is configured, a **Tempest** section follows. Its latest-values strip is built from the newest raw (not downsampled) observation in the range and says "as of" when that is more than 5 minutes old: temperature, humidity, dew point, wind with compass direction and gusts, rain today and current rate, UV, solar radiation, illuminance, recent strikes, sea-level pressure (inHg) with its 3-hour trend, battery. Below it, panels share the dashboard's time axis:
+- **Outdoor**: temperature, dew point, humidity on the same °F and % axes as the room charts, so outdoor and indoor line up
+- **Wind**: average (mph) inside a shaded lull–gust band
+- **Wind direction**: a thin strip of dots on a compass axis (none in calm air)
+- **Rain**: rate (in/h) as an area, the wettest single minute as a line so peaks survive downsampling, the total since local midnight and its Rain Check correction, hail, and rain-start markers
+- **Sun**: UV index and solar radiation (W/m²); illuminance is in the legend, hidden by default
+- **Lightning**: average strike distance per bucket, sized by strike count, plus each individual strike; collapses to a one-line note when there were none
+- **Station**: sea-level pressure (inHg, from station pressure and the station's elevation) and battery voltage
+
+The dashboard always requests downsampled data (about 500 points per range), and each field is aggregated by what it means: maximum gust, minimum lull, summed rain and strikes, wettest minute kept, daily total that survives the midnight reset, vector-mean direction. Legend toggles persist in the URL (`?tempestHidden=lux,gust`; absent means the default, illuminance hidden). When recording is on but the range has no observations, the section says so instead of disappearing. The "Outdoor temp" overlay uses the Tempest instead of Open-Meteo when both are present.
+
 Port `50233` is the production default. When testing locally, use a different port such as `--port 50234`.
 
 ## Prometheus
@@ -140,6 +180,38 @@ Exported metrics (all with `source`, `sensor_id`, `location`, `room` labels). `l
 | `airquality_pm10_ugm3` | PM10 µg/m³ |
 | `airquality_aqi` | Air Quality Index |
 | `airquality_voc_kohm` | VOC gas resistance |
+| `airquality_uv_index` | UV index (Open-Meteo and Tempest) |
+
+The Tempest sets `airquality_temperature_celsius`, `_humidity_percent`, `_dewpoint_celsius`, `_pressure_mbar` (sea-level pressure, comparable to Open-Meteo's) and `_uv_index` with `source="tempest"`, `sensor_id` = device ID, `location` = station name. Its other fields have their own gauges, with the same labels. A null reading removes its series instead of reporting zero. Per-interval values are gauges; use the `_total` counters to sum rain or strikes over a range:
+
+| Metric | Description |
+|--------|-------------|
+| `airquality_tempest_enabled` | 1 when recording runs, 0 when configured but disabled (no label) |
+| `airquality_tempest_station_pressure_mbar` | Station pressure, not sea-level corrected |
+| `airquality_tempest_rain_millimeters_total` | Rain in observations recorded since start (each minute counted once) |
+| `airquality_tempest_lightning_strikes_total` | Strikes in observations recorded since start |
+| `airquality_tempest_wind_lull_meters_per_second` | Minimum 3 s wind sample in the interval |
+| `airquality_tempest_wind_avg_meters_per_second` | Average wind speed |
+| `airquality_tempest_wind_gust_meters_per_second` | Maximum 3 s wind sample |
+| `airquality_tempest_wind_direction_degrees` | Wind direction |
+| `airquality_tempest_wind_sample_interval_seconds` | Wind sample interval |
+| `airquality_tempest_illuminance_lux` | Illuminance |
+| `airquality_tempest_solar_radiation_watts_per_m2` | Solar radiation |
+| `airquality_tempest_rain_millimeters` | Rain in the interval |
+| `airquality_tempest_rain_local_day_millimeters` | Rain since station-local midnight |
+| `airquality_tempest_rain_final_millimeters` | Rain Check corrected rain in the interval |
+| `airquality_tempest_rain_local_day_final_millimeters` | Rain Check corrected rain since midnight |
+| `airquality_tempest_precipitation_type` | 0 none, 1 rain, 2 hail, 3 both |
+| `airquality_tempest_precip_analysis_type` | 0 none, 1 Rain Check on, 2 Rain Check off |
+| `airquality_tempest_lightning_strikes` | Strikes in the interval |
+| `airquality_tempest_lightning_avg_distance_km` | Average strike distance (absent without strikes) |
+| `airquality_tempest_battery_volts` | Battery voltage |
+| `airquality_tempest_report_interval_minutes` | Report interval |
+| `airquality_tempest_observation_timestamp_seconds` | Time of the latest observation |
+| `airquality_tempest_lightning_strike_events_total` | Strike events received over the WebSocket |
+| `airquality_tempest_rain_start_events_total` | Rain-start events received |
+| `airquality_tempest_last_strike_distance_km` / `_energy` / `_timestamp_seconds` | Latest strike |
+| `airquality_tempest_last_rain_start_timestamp_seconds` | Latest rain start |
 
 ## Dev Container
 

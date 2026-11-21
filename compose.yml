@@ -24,6 +24,8 @@ services:
     environment:
       - SENSIBO_API_KEY
       - PURPLEAIR_HOSTS
+      - TEMPEST_TOKEN
+      - TEMPEST_STATION_ID
       - ANTHROPIC_API_KEY
       - OPENAI_API_KEY
       - HOME=/home/dev

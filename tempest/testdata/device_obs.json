@@ -1,0 +1,12 @@
+{
+  "status": {"status_code": 0, "status_message": "SUCCESS"},
+  "device_id": 2002,
+  "type": "obs_st",
+  "source": "db",
+  "summary": {"pressure_trend": "steady", "strike_count_1h": 0, "strike_count_3h": 2},
+  "obs": [
+    [1789564800, 0.1, 0.4, 0.9, 75, 3, 1011.0, 15.8, 78, 1520, 0.12, 13, 0, 0, 0, 0, 2.61, 1, 0, null, null, 0],
+    [1789564860, 0.2, 1.4, 3.1, 270, 3, 1011.1, 15.9, 77, 1610, 0.13, 14, 0.25, 1, 12, 3, 2.61, 1, 0.25, null, null, 0],
+    [1789564920, null, null, null, null, 3, 1011.1, 16.0, 77, 1700, 0.14, 15, 0.1, 1, null, 0, 2.6, 1]
+  ]
+}

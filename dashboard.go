@@ -9,10 +9,12 @@ import (
 
 	_ "embed"
 
+	"github.com/hazel/airquality/calc"
 	"github.com/hazel/airquality/config"
 	"github.com/hazel/airquality/logger"
 	"github.com/hazel/airquality/openmeteo"
 	"github.com/hazel/airquality/store"
+	"github.com/hazel/airquality/tempest"
 )
 
 //go:embed rooms.html
@@ -30,6 +32,74 @@ type dashboardData struct {
 	ACStates    []acStateData    `json:"ac_states"`
 	Weather     []weatherReading `json:"weather"`
 	Annotations []annotationJSON `json:"annotations"`
+	Tempest     tempestData      `json:"tempest"`
+}
+
+type tempestData struct {
+	// Enabled is true when Tempest recording runs, so the dashboard can say
+	// "no observations in this range" rather than hide the section.
+	Enabled      bool                `json:"enabled"`
+	Station      *tempestStationJSON `json:"station"` // null until discovered
+	Observations []tempestObsJSON    `json:"observations"`
+	// Latest is the newest raw (never downsampled) observation in range,
+	// for the latest-values strip.
+	Latest *tempestObsJSON `json:"latest"`
+	Events []tempest.Event `json:"events"`
+}
+
+type tempestStationJSON struct {
+	ID         int     `json:"id"`
+	Name       string  `json:"name"`
+	Room       string  `json:"room"` // config-file room for the first device, else the name
+	ElevationM float64 `json:"elevation_m"`
+	Devices    []int   `json:"devices"`
+}
+
+// tempestObsJSON is an observation (or bucket) plus the values the Tempest
+// does not report but the dashboard needs: dew point, shared with indoor
+// sensors, and sea-level pressure, comparable to Open-Meteo's.
+type tempestObsJSON struct {
+	tempestBucket
+	DewPointC          *float64 `json:"dewpoint_c"`
+	SeaLevelPressureMB *float64 `json:"sea_level_pressure_mb"`
+}
+
+func tempestJSON(b tempestBucket, st *tempest.Station) tempestObsJSON {
+	j := tempestObsJSON{tempestBucket: b}
+	if b.AirTempC != nil && b.RelativeHumidity != nil && *b.RelativeHumidity > 0 {
+		d := calc.DewPoint(*b.AirTempC, *b.RelativeHumidity)
+		j.DewPointC = &d
+	}
+	if b.StationPressureMB != nil && st != nil {
+		p := calc.SeaLevelPressure(*b.StationPressureMB, st.ElevationM)
+		j.SeaLevelPressureMB = &p
+	}
+	return j
+}
+
+func buildTempestData(enabled bool, st *tempest.Station, devs []tempest.Device, obs []tempestBucket, latest *tempest.Observation, evs []tempest.Event, cfg config.Config) tempestData {
+	td := tempestData{Enabled: enabled, Observations: make([]tempestObsJSON, 0, len(obs)), Events: evs}
+	if td.Events == nil {
+		td.Events = []tempest.Event{}
+	}
+	if st != nil {
+		js := &tempestStationJSON{ID: st.ID, Name: st.Name, Room: st.Name, ElevationM: st.ElevationM, Devices: []int{}}
+		for _, d := range devs {
+			js.Devices = append(js.Devices, d.ID)
+		}
+		if len(devs) > 0 {
+			js.Room = cfg.Room("tempest", strconv.Itoa(devs[0].ID), st.Name)
+		}
+		td.Station = js
+	}
+	for _, b := range obs {
+		td.Observations = append(td.Observations, tempestJSON(b, st))
+	}
+	if latest != nil {
+		j := tempestJSON(tempestBucket{Observation: *latest, RainMaxMM: latest.RainMM}, st)
+		td.Latest = &j
+	}
+	return td
 }
 
 type weatherReading struct {
@@ -220,19 +290,24 @@ func dataHandler(cache *dataCache, cfg config.Config) http.HandlerFunc {
 		}
 
 		readings, acRecords, weatherRows, annotationRows := cache.snapshotRange(from, to)
+		tempestObs, tempestEvents := cache.snapshotTempest(from, to)
+		tempestRows := rawBuckets(tempestObs)
 
 		if s := r.URL.Query().Get("stepSize"); s != "" {
 			if ms, err := strconv.ParseInt(s, 10, 64); err == nil && ms > 0 {
 				readings = downsampleReadings(readings, from, ms)
 				weatherRows = downsampleWeather(weatherRows, from, ms)
+				tempestRows = downsampleTempest(tempestObs, from, ms)
 			}
 		}
+		station, devices := cache.tempestStationInfo()
 
 		data := &dashboardData{
 			Sensors:     groupReadings(readings, cache.latestLocations(), cfg),
 			ACStates:    groupACStates(acRecords, cache.latestACRooms()),
 			Weather:     weatherReadings(weatherRows),
 			Annotations: make([]annotationJSON, 0, len(annotationRows)),
+			Tempest:     buildTempestData(cache.tempestEnabled, station, devices, tempestRows, cache.latestTempest(from, to), tempestEvents, cfg),
 		}
 		for _, a := range annotationRows {
 			data.Annotations = append(data.Annotations, annotationJSON{

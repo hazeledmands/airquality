@@ -1,0 +1,116 @@
+// @vitest-environment jsdom
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+
+vi.mock('../charts.js', () => ({ xTickCallback: vi.fn() }));
+
+import { buildTempestSection, updateTempestSection, tooltipLabel, secondaryAspect, buildEmptyTempestSection } from '../tempest-card.js';
+
+// Minimal Chart stand-in: records config, supports visibility like Chart.js.
+class FakeChart {
+    constructor(canvas, cfg) {
+        this.canvas = canvas;
+        this.data = cfg.data;
+        this.options = cfg.options;
+    }
+    isDatasetVisible(i) { return !(this.data.datasets[i]?.hidden); }
+    setDatasetVisibility(i, v) { this.data.datasets[i].hidden = !v; }
+    update() {}
+}
+
+const iso = (min) => new Date(Date.parse('2026-11-20T12:00:00Z') + min * 60_000).toISOString();
+function ob(min, f = {}) {
+    return { device_id: 2002, timestamp: iso(min), report_interval_min: 1, ...f };
+}
+
+function render(tempest, stepMs = 60_000) {
+    document.body.innerHTML = '';
+    const { section, panels } = buildTempestSection(tempest.station, 4);
+    document.body.appendChild(section);
+    updateTempestSection(panels, tempest, stepMs);
+    const panel = (name) => panels.find(p => p.room === `__tempest__/${name}`);
+    return { section, panels, panel };
+}
+
+beforeEach(() => {
+    globalThis.Chart = FakeChart;
+    history.replaceState(null, '', '/');
+});
+
+describe('Tempest section', () => {
+    const obs = [
+        ob(0, { air_temp_c: 10, relative_humidity: 70, wind_avg_ms: 1, wind_gust_ms: 2, wind_direction_deg: 90 }),
+        ob(1, { air_temp_c: 11, relative_humidity: 71, wind_avg_ms: 0, wind_gust_ms: 1, wind_direction_deg: 180 }),
+        ob(9, { air_temp_c: 12, relative_humidity: 72, wind_avg_ms: 3, wind_gust_ms: 5, wind_direction_deg: 270 }),
+    ];
+    const tempest = { enabled: true, station: { name: 'Home' }, observations: obs, latest: obs[2], events: [] };
+
+    it('titles the section with the station name', () => {
+        const { section } = render(tempest);
+        expect(section.querySelector('h2').textContent).toContain('Tempest · Home');
+    });
+
+    // With index-mode tooltips, hovering point i of any wind dataset shows
+    // the direction of that same minute.
+    it('wind direction tooltip matches the hovered minute', () => {
+        const { panel } = render(tempest);
+        const dir = panel('direction').chart.data.datasets[0];
+        const speed = panel('wind').chart.data.datasets[0];
+        expect(dir.data.length).toBe(speed.data.length);
+        const last = dir.data.length - 1;
+        expect(dir.data[last].x).toBe(speed.data[last].x);
+        const text = tooltipLabel({ dataset: dir, raw: dir.data[last], parsed: { y: dir.data[last].y } });
+        expect(text).toContain('270');
+        expect(text).toContain('W');
+    });
+
+    it('collapses the lightning panel to a note when there are no strikes', () => {
+        const { section } = render(tempest);
+        const card = section.querySelector('.tempest-panel[data-panel="lightning"]');
+        expect(card.classList.contains('collapsed')).toBe(true);
+        expect(card.textContent).toContain('no strikes');
+    });
+
+    it('shows the lightning panel when there are strikes', () => {
+        const withStrikes = { ...tempest, events: [{ timestamp: iso(9), type: 'lightning_strike', distance_km: 8 }] };
+        const { section } = render(withStrikes);
+        const card = section.querySelector('.tempest-panel[data-panel="lightning"]');
+        expect(card.classList.contains('collapsed')).toBe(false);
+    });
+
+    it('hides illuminance by default and restores legend state from the URL', () => {
+        let { panel } = render(tempest);
+        const lux = () => panel('sun').chart.data.datasets.find(d => d.key === 'lux');
+        expect(lux().hidden).toBe(true);
+        history.replaceState(null, '', '/?tempestHidden=gust');
+        ({ panel } = render(tempest));
+        expect(lux().hidden).toBe(false);
+        expect(panel('wind').chart.data.datasets.find(d => d.key === 'gust').hidden).toBe(true);
+    });
+
+    it('a legend click persists the hidden set in the URL', () => {
+        const { panel } = render(tempest);
+        const chart = panel('wind').chart;
+        const idx = chart.data.datasets.findIndex(d => d.key === 'gust');
+        chart.options.plugins.legend.onClick(null, { datasetIndex: idx }, { chart });
+        expect(new URLSearchParams(location.search).get('tempestHidden')).toBe('gust,lux');
+    });
+
+    it('builds the strip from the raw latest observation', () => {
+        const { section } = render({ ...tempest, latest: ob(9, { air_temp_c: 30 }) });
+        expect(section.querySelector('#tempest-current').textContent).toContain('86.0°F');
+    });
+});
+
+describe('empty range', () => {
+    it('explains why there is nothing to show', () => {
+        const el = buildEmptyTempestSection({ name: 'Home' });
+        expect(el.textContent).toContain('No Tempest observations in this range');
+    });
+});
+
+describe('secondaryAspect', () => {
+    it('is shorter on desktop and unchanged on phones', () => {
+        expect(secondaryAspect(4)).toBeCloseTo(6.4);
+        expect(secondaryAspect(2.4)).toBe(2.4);
+    });
+});

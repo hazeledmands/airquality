@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"sort"
 	"strconv"
 	"sync"
 	"time"
@@ -11,6 +12,7 @@ import (
 	"github.com/hazel/airquality/logger"
 	"github.com/hazel/airquality/openmeteo"
 	"github.com/hazel/airquality/store"
+	"github.com/hazel/airquality/tempest"
 )
 
 const cacheDuration = 30 * 24 * time.Hour
@@ -30,9 +32,23 @@ type dataCache struct {
 	seenReadings map[string]bool
 	seenACStates map[string]bool
 	seenWeather  map[string]bool
+
+	// Tempest observations are replaced, not skipped, on a repeated
+	// (device, timestamp): the daily recheck brings Rain Check corrections.
+	tempestObs        []tempest.Observation
+	tempestIdx        map[string]int
+	tempestEvents     []tempest.Event
+	seenTempestEvents map[string]bool
+	tempestStation    *tempest.Station
+	tempestDevices    []tempest.Device
+	// tempestEnabled is true when Tempest recording runs; the dashboard
+	// then explains an empty range instead of hiding the section.
+	tempestEnabled bool
 }
 
-func newDataCache(ctx context.Context, db *store.Store) (*dataCache, error) {
+// newDataCache backfills from Postgres. withTempest also loads the Tempest
+// tables, which exist only once their migration is applied.
+func newDataCache(ctx context.Context, db *store.Store, withTempest bool) (*dataCache, error) {
 	c := &dataCache{
 		seenReadings: make(map[string]bool),
 		seenACStates: make(map[string]bool),
@@ -41,7 +57,148 @@ func newDataCache(ctx context.Context, db *store.Store) (*dataCache, error) {
 	if err := c.backfill(ctx, db); err != nil {
 		return nil, err
 	}
+	c.tempestEnabled = withTempest
+	if withTempest {
+		to := time.Now().UTC()
+		obs, err := db.QueryTempestObservations(ctx, to.Add(-cacheDuration), to)
+		if err != nil {
+			return nil, fmt.Errorf("backfill tempest observations: %w", err)
+		}
+		evs, err := db.QueryTempestEvents(ctx, to.Add(-cacheDuration), to)
+		if err != nil {
+			return nil, fmt.Errorf("backfill tempest events: %w", err)
+		}
+		c.addTempest(obs)
+		for _, e := range evs {
+			c.addTempestEvent(e)
+		}
+		log.Printf("Cache backfilled: %d Tempest observations, %d Tempest events", len(obs), len(evs))
+	}
 	return c, nil
+}
+
+func tempestObsKey(o tempest.Observation) string {
+	return strconv.Itoa(o.DeviceID) + "/" + strconv.FormatInt(o.Time.Unix(), 10)
+}
+
+// tempestEventKey matches the tempest_events dedup index: two strikes in the
+// same second with different distance or energy are two events.
+func tempestEventKey(e tempest.Event) string {
+	f := func(p *float64) string {
+		if p == nil {
+			return "-"
+		}
+		return strconv.FormatFloat(*p, 'g', -1, 64)
+	}
+	return strconv.Itoa(e.DeviceID) + "/" + e.Type + "/" + strconv.FormatInt(e.Time.Unix(), 10) + "/" + f(e.DistanceKM) + "/" + f(e.Energy)
+}
+
+// addTempest inserts observations, replacing any with the same device and
+// timestamp, and keeps them in time order.
+func (c *dataCache) addTempest(obs []tempest.Observation) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.tempestIdx == nil {
+		c.tempestIdx = make(map[string]int)
+	}
+	resort := false
+	for _, o := range obs {
+		k := tempestObsKey(o)
+		if i, ok := c.tempestIdx[k]; ok {
+			c.tempestObs[i] = o
+			continue
+		}
+		if n := len(c.tempestObs); n > 0 && o.Time.Before(c.tempestObs[n-1].Time) {
+			resort = true
+		}
+		c.tempestIdx[k] = len(c.tempestObs)
+		c.tempestObs = append(c.tempestObs, o)
+	}
+	if resort {
+		sort.SliceStable(c.tempestObs, func(i, j int) bool { return c.tempestObs[i].Time.Before(c.tempestObs[j].Time) })
+		for i, o := range c.tempestObs {
+			c.tempestIdx[tempestObsKey(o)] = i
+		}
+	}
+}
+
+func (c *dataCache) addTempestEvent(e tempest.Event) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.seenTempestEvents == nil {
+		c.seenTempestEvents = make(map[string]bool)
+	}
+	k := tempestEventKey(e)
+	if c.seenTempestEvents[k] {
+		return
+	}
+	c.seenTempestEvents[k] = true
+	c.tempestEvents = append(c.tempestEvents, e)
+	// Events arrive for as long as the server runs; keep only the cache
+	// window so memory stays bounded.
+	cutoff := time.Now().Add(-cacheDuration)
+	if len(c.tempestEvents) > 0 && c.tempestEvents[0].Time.Before(cutoff) {
+		kept := c.tempestEvents[:0]
+		for _, ev := range c.tempestEvents {
+			if ev.Time.Before(cutoff) {
+				delete(c.seenTempestEvents, tempestEventKey(ev))
+				continue
+			}
+			kept = append(kept, ev)
+		}
+		c.tempestEvents = kept
+	}
+}
+
+// latestTempest returns the newest raw observation in [from, to], so the
+// latest-values strip never shows a downsampled bucket as "now".
+func (c *dataCache) latestTempest(from, to time.Time) *tempest.Observation {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	for i := len(c.tempestObs) - 1; i >= 0; i-- {
+		o := c.tempestObs[i]
+		if o.Time.After(to) {
+			continue
+		}
+		if o.Time.Before(from) {
+			return nil
+		}
+		return &o
+	}
+	return nil
+}
+
+func (c *dataCache) setTempestStation(st tempest.Station, devs []tempest.Device) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.tempestStation = &st
+	c.tempestDevices = devs
+}
+
+// tempestStationInfo returns the recorded station and devices, or nil.
+func (c *dataCache) tempestStationInfo() (*tempest.Station, []tempest.Device) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.tempestStation, c.tempestDevices
+}
+
+// snapshotTempest returns copies of Tempest observations and events in [from, to].
+func (c *dataCache) snapshotTempest(from, to time.Time) ([]tempest.Observation, []tempest.Event) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	obs := make([]tempest.Observation, 0)
+	for _, o := range c.tempestObs {
+		if !o.Time.Before(from) && !o.Time.After(to) {
+			obs = append(obs, o)
+		}
+	}
+	evs := make([]tempest.Event, 0)
+	for _, e := range c.tempestEvents {
+		if !e.Time.Before(from) && !e.Time.After(to) {
+			evs = append(evs, e)
+		}
+	}
+	return obs, evs
 }
 
 func (c *dataCache) backfill(ctx context.Context, db *store.Store) error {

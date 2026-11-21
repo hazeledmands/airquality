@@ -1,0 +1,116 @@
+{
+ "stations": [
+  {
+   "created_epoch": 1700000000,
+   "devices": [
+    {
+     "device_id": 200001,
+     "device_meta": {
+      "agl": 1.8288,
+      "environment": "indoor",
+      "name": "HB-00000001",
+      "wifi_network_name": ""
+     },
+     "device_type": "HB",
+     "firmware_revision": "343",
+     "hardware_revision": "2",
+     "location_id": 100001,
+     "serial_number": "HB-00000001"
+    },
+    {
+     "device_id": 200002,
+     "device_meta": {
+      "agl": 1.8288,
+      "environment": "outdoor",
+      "name": "ST-00000002",
+      "wifi_network_name": ""
+     },
+     "device_settings": {
+      "show_precip_final": true
+     },
+     "device_type": "ST",
+     "firmware_revision": "193",
+     "hardware_revision": "1",
+     "location_id": 100001,
+     "serial_number": "ST-00000002"
+    }
+   ],
+   "is_local_mode": false,
+   "last_modified_epoch": 1700003600,
+   "latitude": 37.8,
+   "location_id": 100001,
+   "longitude": -122.3,
+   "name": "Home",
+   "public_name": "Example Street",
+   "state": 1,
+   "station_id": 100001,
+   "station_items": [
+    {
+     "device_id": 200002,
+     "item": "air_temperature_humidity",
+     "location_id": 100001,
+     "location_item_id": 300001,
+     "sort": 0,
+     "station_id": 100001,
+     "station_item_id": 300001
+    },
+    {
+     "device_id": 200002,
+     "item": "barometric_pressure",
+     "location_id": 100001,
+     "location_item_id": 300002,
+     "sort": 1,
+     "station_id": 100001,
+     "station_item_id": 300002
+    },
+    {
+     "device_id": 200002,
+     "item": "light",
+     "location_id": 100001,
+     "location_item_id": 300003,
+     "sort": 5,
+     "station_id": 100001,
+     "station_item_id": 300003
+    },
+    {
+     "device_id": 200002,
+     "item": "lightning",
+     "location_id": 100001,
+     "location_item_id": 300004,
+     "sort": 2,
+     "station_id": 100001,
+     "station_item_id": 300004
+    },
+    {
+     "device_id": 200002,
+     "item": "rain",
+     "location_id": 100001,
+     "location_item_id": 300005,
+     "sort": 4,
+     "station_id": 100001,
+     "station_item_id": 300005
+    },
+    {
+     "device_id": 200002,
+     "item": "wind",
+     "location_id": 100001,
+     "location_item_id": 300006,
+     "sort": 3,
+     "station_id": 100001,
+     "station_item_id": 300006
+    }
+   ],
+   "station_meta": {
+    "elevation": 20.0,
+    "share_with_wf": false,
+    "share_with_wu": false
+   },
+   "timezone": "America/Los_Angeles",
+   "timezone_offset_minutes": -480
+  }
+ ],
+ "status": {
+  "status_code": 0,
+  "status_message": "SUCCESS"
+ }
+}

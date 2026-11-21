@@ -1,5 +1,5 @@
 import { REFRESH_MS, cToF, filterByRange, buildRoomDatasets, computeStatus, getAspectRatio, makeWeatherTempSeries, makeUVSeries, extractDaylightPairs, applyNewAnnotation, removeAnnotation } from './data.js';
-import { CHART_ANIMATION_MS, Y_AXIS_PADDING } from './config.js';
+import { CHART_ANIMATION_MS, Y_AXIS_PADDING, pinAxisWidth } from './config.js';
 import { xTickCallback } from './charts.js';
 import { combinedChartOpts, buildCombinedDatasets, PARTICLE_BINS, formatLatestValues } from './room-charts.js';
 import { renderHeatmap, setupHeatmapInteraction } from './particle-heatmap.js';
@@ -15,6 +15,8 @@ import { computeXRange, syncXAxes, computeYRange, syncYAxes } from './axis-sync.
 import { annotationsPlugin, setAnnotations, setupAnnotationUI, setAnnotationsEditable } from './annotations.js';
 import { fetchAuth, loginUrl } from './auth.js';
 import { getParam, setParam } from './url-state.js';
+import { buildTempestSection, updateTempestSection, secondaryAspect, buildEmptyTempestSection } from './tempest-card.js';
+import { tempestAsWeather, tempestPanelIds } from './tempest.js';
 
 Chart.register(crosshairPlugin);
 Chart.register(dragZoomPlugin);
@@ -30,6 +32,8 @@ let cleanupAnnotationUI = null;
 let reorder = null;
 let outdoorTempEnabled = false;
 let currentWeather = [];
+let currentTempest = null; // { enabled, station, observations, latest, events } from /api/data
+let renderedLayout = []; // section/chart ids the DOM was last built for
 let skipAnimation = false; // set true before zoom-triggered updateCharts to avoid filler plugin errors
 
 
@@ -53,6 +57,7 @@ function weatherChartOpts(ar) {
                 title: { display: true, text: '\u00B0F', color: '#888', font: { size: 11 } },
                 ticks: { color: '#888' },
                 grid: { color: '#ffffff06' },
+                afterFit: pinAxisWidth,
             },
             yUV: {
                 type: 'linear',
@@ -61,6 +66,7 @@ function weatherChartOpts(ar) {
                 ticks: { color: '#888' },
                 grid: { drawOnChartArea: false },
                 min: 0,
+                afterFit: pinAxisWidth,
             },
         },
         plugins: {
@@ -157,6 +163,18 @@ function buildRoomDOM(rooms) {
         container.appendChild(buildWeatherCard(currentWeather, ar));
     }
 
+    if (tempestEmpty(currentTempest)) {
+        container.appendChild(buildEmptyTempestSection(currentTempest.station));
+    } else if (hasTempest(currentTempest)) {
+        const { section, panels } = buildTempestSection(currentTempest.station, ar);
+        container.appendChild(section);
+        for (const p of panels) {
+            registerChart(p.chart);
+            registerZoomChart(p.chart);
+            roomCharts.push(p);
+        }
+    }
+
     for (const room of rooms) {
         const section = document.createElement('div');
         section.className = 'room-section';
@@ -222,39 +240,60 @@ function updateLatestValues(rooms) {
     }
 }
 
+function hasTempest(tempest) {
+    return (tempest?.observations?.length ?? 0) > 0;
+}
+
+// Recording is on but the selected range has no observations.
+function tempestEmpty(tempest) {
+    return !!tempest?.enabled && !hasTempest(tempest);
+}
+
 function updateCharts(data) {
     const sensors = data.sensors || [];
     const acStates = data.ac_states || [];
     const weather = data.weather || [];
     currentWeather = weather;
+    currentTempest = data.tempest || null;
+    const tempestShown = hasTempest(currentTempest);
     setDaylightPairs(extractDaylightPairs(weather));
 
-    if (!sensors.length && !acStates.length) {
+    if (!sensors.length && !acStates.length && !tempestShown && !tempestEmpty(currentTempest)) {
         document.getElementById('status').textContent = 'No data yet.';
         const container = document.getElementById('rooms-container');
         container.innerHTML = '<div class="no-data">Waiting for first sensor reading&hellip;</div>';
         for (const rc of roomCharts) { unregisterChart(rc.chart); unregisterZoomChart(rc.chart); }
         roomCharts = [];
+        renderedLayout = [];
         return;
     }
 
     const rooms = buildRoomDatasets(sensors, acStates, currentStepSize);
 
     // Rebuild DOM if room set or weather presence changed
-    const currentRooms = roomCharts.map(rc => rc.room);
-    const newRooms = (weather.length > 0 ? ['__weather__'] : []).concat(rooms.map(r => r.name));
+    const currentRooms = renderedLayout;
+    const newRooms = (weather.length > 0 ? ['__weather__'] : [])
+        .concat(tempestShown ? tempestPanelIds() : [])
+        .concat(tempestEmpty(currentTempest) ? ['__tempest_empty__'] : [])
+        .concat(rooms.map(r => r.name));
     if (currentRooms.length !== newRooms.length || currentRooms.some((r, i) => r !== newRooms[i])) {
         for (const rc of roomCharts) rc.chart.destroy();
         buildRoomDOM(rooms);
+        renderedLayout = newRooms;
     }
 
     updateWeatherCard(weather);
+    if (tempestShown) {
+        updateTempestSection(roomCharts.filter(rc => rc.room.startsWith('__tempest__/')), currentTempest, currentStepSize);
+    }
+    // The outdoor overlay prefers the on-site Tempest over Open-Meteo.
+    const outdoorTemp = tempestShown ? tempestAsWeather(currentTempest.observations) : currentWeather;
 
     // Set chart data (no update yet)
     for (const room of rooms) {
         const rc = roomCharts.find(r => r.room === room.name);
         if (!rc) continue;
-        rc.chart.data.datasets = buildCombinedDatasets(room, { outdoorTempEnabled, currentWeather, stepMs: currentStepSize });
+        rc.chart.data.datasets = buildCombinedDatasets(room, { outdoorTempEnabled, currentWeather: outdoorTemp, stepMs: currentStepSize });
         rc.roomData = room;
     }
 
@@ -264,6 +303,9 @@ function updateCharts(data) {
     syncXAxes(allCharts, xRange);
     syncYAxes(allCharts, 'y',  computeYRange(allCharts, 'y',  Y_AXIS_PADDING));
     syncYAxes(allCharts, 'y2', computeYRange(allCharts, 'y2', Y_AXIS_PADDING));
+    // UV appears on both the Open-Meteo and Tempest charts; keep one scale.
+    const uvRange = computeYRange(allCharts, 'yUV', 0);
+    if (uvRange) syncYAxes(allCharts, 'yUV', { min: 0, max: Math.max(uvRange.max, 3) });
     const updateMode = skipAnimation ? 'none' : undefined;
     skipAnimation = false;
     for (const rc of roomCharts) {
@@ -275,14 +317,15 @@ function updateCharts(data) {
 
     setAnnotations(data.annotations || []);
     updateLatestValues(rooms);
+    const tempestStatus = tempestShown ? ` \u00B7 ${currentTempest.observations.length} Tempest obs` : '';
     document.getElementById('status').textContent =
-        computeStatus(sensors, acStates) + ` \u00B7 updated ${new Date().toLocaleTimeString()}`;
+        computeStatus(sensors, acStates) + tempestStatus + ` \u00B7 updated ${new Date().toLocaleTimeString()}`;
 }
 
 window.addEventListener('resize', () => {
     const ar = getAspectRatio(window.innerWidth);
     for (const rc of roomCharts) {
-        rc.chart.options.aspectRatio = ar;
+        rc.chart.options.aspectRatio = rc.secondary ? secondaryAspect(ar) : ar;
         rc.chart.update();
         if (rc.heatmapCanvas && rc.roomData?.particles) {
             const xRange = { min: rc.chart.options.scales.x.min, max: rc.chart.options.scales.x.max };
