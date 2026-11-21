@@ -31,7 +31,7 @@ export const TEMPEST_COLORS = {
 const LABELS = {
     outdoor: 'Outdoor · °F, %',
     wind: 'Wind · mph',
-    direction: 'Wind direction',
+    direction: 'Wind direction · where it blows from',
     rain: 'Rain · in/h (area: bucket average, line: wettest minute), in since local midnight',
     sun: 'Sun · UV index, W/m²',
     lightning: 'Lightning · distance in miles',
@@ -97,11 +97,18 @@ export function tempestPanelOpts(panel, ar) {
         // A thin strip: direction needs a compass axis, not the speed axis.
         // The wind panel right above labels the shared time axis, so the
         // strip hides its own time labels and gives the height to the plot.
-        aspect = secondaryAspect(ar) * 2.2;
+        // Tall enough for all five compass labels: on a phone that is
+        // about 90 px, on desktop about 100.
+        aspect = ar >= 4 ? secondaryAspect(ar) * 1.8 : ar * 1.6;
         scales.x.ticks = { ...scales.x.ticks, display: false };
+        // Degrees increase upward (N at the bottom, E, S, W, N at the top).
+        // The ticks are pinned: with a step size Chart.js would label only
+        // some cardinal points, and without E and W an easterly and a
+        // westerly look alike.
         scales.yDir = axis('left', '', {
             min: 0, max: 360,
-            ticks: { color: '#666', stepSize: 180, autoSkip: false, callback: (val) => DIRS[val] ?? '' },
+            ticks: { color: '#666', autoSkip: false, font: { size: 10 }, callback: (val) => DIRS[val] ?? '' },
+            afterBuildTicks: (scale) => { scale.ticks = [0, 90, 180, 270, 360].map(value => ({ value })); },
         });
         scales.yDirR = axis('right', '', { display: true, ticks: { display: false }, grid: { drawOnChartArea: false } });
         break;
@@ -185,7 +192,7 @@ export function buildTempestDatasets(panel, s, ev) {
         ];
     case 'direction':
         return [{
-            key: 'direction', label: 'Direction', data: s.windDir, yAxisID: 'yDir', borderColor: TEMPEST_COLORS.windDir, backgroundColor: TEMPEST_COLORS.windDir,
+            key: 'direction', label: 'From', data: s.windDir, yAxisID: 'yDir', borderColor: TEMPEST_COLORS.windDir, backgroundColor: TEMPEST_COLORS.windDir,
             showLine: false, pointRadius: 1.2, pointHoverRadius: 3, noPeaks: true,
             tooltipFormat: (val) => `${Math.round(val)}° ${cardinal(val)}`,
         }];
