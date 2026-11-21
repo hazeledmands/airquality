@@ -177,7 +177,7 @@ function buildWeatherCard(weather, ar) {
         airCard.className = 'chart-card';
         const label = document.createElement('div');
         label.className = 'panel-label';
-        label.textContent = 'Outdoor air \u00B7 US AQI, \u00B5g/m\u00B3' + (hasPollen(currentOutdoorAir) ? ', pollen' : '');
+        label.textContent = 'Outdoor air \u00B7 US AQI (rolling avg), \u00B5g/m\u00B3' + (hasPollen(currentOutdoorAir) ? ', pollen' : '');
         airCard.appendChild(label);
         const airStrip = document.createElement('div');
         airStrip.className = 'room-latest';

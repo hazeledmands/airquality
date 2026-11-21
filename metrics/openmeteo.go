@@ -1,7 +1,6 @@
 package metrics
 
 import (
-	"fmt"
 	"strconv"
 	"time"
 
@@ -31,8 +30,11 @@ func (m *Metrics) registerOpenMeteo() {
 	m.forecastCloud = g("airquality_forecast_cloud_cover_percent", "Forecast cloud cover, hours_ahead from now.", "hours_ahead")
 }
 
-func weatherLabels(lat, lon float64) []string {
-	return []string{"weather", fmt.Sprintf("%.4f,%.4f", lat, lon), "outdoor", "outdoor"}
+// weatherLabels are the labels of every Open-Meteo series. sensor_id is a
+// constant: only one location is ever configured, and the coordinates must
+// not leave the private database.
+func weatherLabels(_, _ float64) []string {
+	return []string{"weather", "open-meteo", "outdoor", "outdoor"}
 }
 
 // UpdateAirQuality sets the outdoor air quality gauges. PM2.5, PM10 and the

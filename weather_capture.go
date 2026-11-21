@@ -229,7 +229,7 @@ func runWeatherBackfill(ctx context.Context, api weatherAPI, db weatherStore, o 
 		if err != nil {
 			return res, fmt.Errorf("weather %s: %w", w.Start.Format("2006-01-02"), err)
 		}
-		rows = notAfter(rows, o.to, func(r openmeteo.Reading) time.Time { return r.Time })
+		rows = within(rows, o.from, o.to, func(r openmeteo.Reading) time.Time { return r.Time })
 		n, err := db.BatchInsertWeather(ctx, rows)
 		if err != nil {
 			return res, err
@@ -249,7 +249,7 @@ func runWeatherBackfill(ctx context.Context, api weatherAPI, db weatherStore, o 
 		if err != nil {
 			return res, fmt.Errorf("air quality %s: %w", w.Start.Format("2006-01-02"), err)
 		}
-		rows = notAfter(rows, o.to, func(a openmeteo.AirQuality) time.Time { return a.Time })
+		rows = within(rows, o.from, o.to, func(a openmeteo.AirQuality) time.Time { return a.Time })
 		n, err := db.UpsertAirQuality(ctx, rows)
 		if err != nil {
 			return res, err
@@ -306,12 +306,13 @@ func orDash(p *float64) any {
 	return *p
 }
 
-// notAfter drops rows later than to. The APIs answer whole days, so the
-// current day includes hours that are still forecasts, not observations.
-func notAfter[T any](rows []T, to time.Time, at func(T) time.Time) []T {
+// within keeps rows in [from, to]. The APIs answer whole days: the first
+// day can start before --from, and the current day includes hours that are
+// still forecasts, not observations.
+func within[T any](rows []T, from, to time.Time, at func(T) time.Time) []T {
 	out := rows[:0:0]
 	for _, r := range rows {
-		if !at(r).After(to) {
+		if t := at(r); !t.Before(from) && !t.After(to) {
 			out = append(out, r)
 		}
 	}

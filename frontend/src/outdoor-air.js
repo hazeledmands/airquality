@@ -57,7 +57,9 @@ export function airDatasets(rows) {
         label, data: series(rows, field), yAxisID: axis, borderColor: color, fill: false, borderWidth: 1.5, ...extra,
     });
     const ds = [
-        line('US AQI', 'us_aqi', 'yAQI', AIR_COLORS.aqi, { borderWidth: 2, peakUnit: '', tooltipDigits: 0 }),
+        // The US AQI is computed from rolling averages (8 h ozone, 24 h
+        // particles), so it lags the hourly concentrations beside it.
+        line('US AQI (rolling avg)', 'us_aqi', 'yAQI', AIR_COLORS.aqi, { borderWidth: 2, peakUnit: '', tooltipDigits: 0 }),
         line('PM2.5', 'pm2_5', 'yGas', AIR_COLORS.pm, { noPeaks: true, unit: 'µg/m³' }),
         line('Ozone', 'ozone', 'yGas', AIR_COLORS.ozone, { noPeaks: true, unit: 'µg/m³' }),
         line('NO₂', 'nitrogen_dioxide', 'yGas', AIR_COLORS.no2, { noPeaks: true, unit: 'µg/m³' }),
@@ -109,20 +111,26 @@ export function cloudSeries(weather) {
 
 const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
-// The next three local days from now: high/low (°F), highest chance of
-// precipitation and mean cloud cover.
+// The next three complete local days, starting with today: high/low (°F),
+// highest chance of precipitation and mean cloud cover. Today counts all of
+// its hours, including those already past, so its high and low are the
+// day's. A day with fewer than 23 hours (the last one fetched; 23 allows for
+// a DST change) is left out rather than shown with partial values.
 export function forecastDays(hours, nowMs = Date.now()) {
-    const today = new Date(nowMs).toDateString();
+    const now = new Date(nowMs);
+    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+    const today = now.toDateString();
     const byDay = new Map();
     for (const h of hours) {
         const t = new Date(h.timestamp);
-        if (t.getTime() < nowMs - 3600_000) continue;
+        if (t.getTime() < todayStart) continue;
         const key = t.toDateString();
         if (!byDay.has(key)) byDay.set(key, { date: t, hours: [] });
         byDay.get(key).hours.push(h);
     }
     const days = [];
     for (const [key, { date, hours: hs }] of byDay) {
+        if (hs.length < 23) continue;
         const temps = hs.map(h => h.temp_c).filter(x => x != null);
         const probs = hs.map(h => h.precip_probability).filter(x => x != null);
         const clouds = hs.map(h => h.cloud_cover).filter(x => x != null);

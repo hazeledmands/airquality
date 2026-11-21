@@ -226,7 +226,8 @@ func TestDataHandler_OutdoorAirAndForecast(t *testing.T) {
 	now := time.Now().UTC().Truncate(time.Hour)
 	c.addAirQuality([]openmeteo.AirQuality{{Time: now.Add(-time.Hour), Latitude: 12.34, Longitude: -56.78, PM25: fp(12), USAQI: fp(50), GrassPollen: nil}})
 	c.setForecast([]openmeteo.ForecastHour{
-		{Time: now.Add(-2 * time.Hour), TempC: fp(1)}, // past: not served
+		{Time: now.Add(-30 * time.Hour), TempC: fp(1)}, // before today: not served
+		{Time: now.Add(-2 * time.Hour), TempC: fp(2)},  // earlier today: served, for the day's high/low
 		{Time: now.Add(time.Hour), TempC: fp(11), PrecipProbability: fp(30)},
 	})
 	c.addWeather(openmeteo.Reading{Time: now.Add(-time.Hour), Latitude: 12.34, Longitude: -56.78, TempC: 10, CloudCover: fp(70)})
@@ -248,7 +249,7 @@ func TestDataHandler_OutdoorAirAndForecast(t *testing.T) {
 	if len(data.OutdoorAir) != 1 || data.OutdoorAir[0]["pm2_5"] != 12.0 || data.OutdoorAir[0]["us_aqi"] != 50.0 {
 		t.Errorf("outdoor_air = %+v", data.OutdoorAir)
 	}
-	if len(data.Forecast) != 1 || data.Forecast[0]["precip_probability"] != 30.0 {
+	if len(data.Forecast) != 2 || data.Forecast[1]["precip_probability"] != 30.0 {
 		t.Errorf("forecast = %+v", data.Forecast)
 	}
 	if len(data.Weather) != 1 || data.Weather[0]["cloud_cover"] != 70.0 {
@@ -280,5 +281,47 @@ func TestWeatherBackfill_DropsHoursAfterTo(t *testing.T) {
 	}
 	if len(db.weather) != 21 {
 		t.Errorf("weather rows = %d, want 21 (00:00..20:00)", len(db.weather))
+	}
+}
+
+// --from is a lower bound too: whole-day answers include earlier hours.
+func TestWeatherBackfill_DropsHoursBeforeFrom(t *testing.T) {
+	api := &fakeWeatherAPI{dayLong: true}
+	db := newFakeWeatherStore(true)
+	from := time.Date(2026, 4, 17, 6, 0, 0, 0, time.UTC)
+	to := time.Date(2026, 4, 17, 23, 59, 0, 0, time.UTC)
+	if _, err := runWeatherBackfill(t.Context(), api, db, weatherBackfillOptions{from: from, to: to}, func(string, ...any) {}); err != nil {
+		t.Fatal(err)
+	}
+	for ts := range db.weather {
+		if ts.Before(from) {
+			t.Errorf("stored weather at %v, before --from", ts)
+		}
+	}
+	for ts := range db.aq {
+		if ts.Before(from) {
+			t.Errorf("stored air quality at %v, before --from", ts)
+		}
+	}
+	if len(db.weather) != 18 {
+		t.Errorf("weather rows = %d, want 18 (06:00..23:00)", len(db.weather))
+	}
+}
+
+// The hourly sample just before the range is included, so the outdoor line
+// starts at the left edge instead of up to an hour in.
+func TestSnapshotAirQuality_IncludesSampleBeforeFrom(t *testing.T) {
+	c := newTestCache()
+	t0 := time.Date(2026, 11, 21, 10, 0, 0, 0, time.UTC)
+	c.addAirQuality([]openmeteo.AirQuality{{Time: t0, PM25: fp(1)}, {Time: t0.Add(time.Hour), PM25: fp(2)}, {Time: t0.Add(2 * time.Hour), PM25: fp(3)}})
+	got := c.snapshotAirQuality(t0.Add(70*time.Minute), t0.Add(3*time.Hour))
+	// Served at from (the value in effect when the range starts), so it
+	// doesn't stretch the shared x axis to the left.
+	if len(got) != 2 || !got[0].Time.Equal(t0.Add(70*time.Minute)) || *got[0].PM25 != 2 {
+		t.Errorf("got %+v, want the 11:00 value at 11:10, then 12:00", got)
+	}
+	// Not when the earlier sample is stale (over two hours before from).
+	if got := c.snapshotAirQuality(t0.Add(5*time.Hour), t0.Add(6*time.Hour)); len(got) != 0 {
+		t.Errorf("stale sample included: %+v", got)
 	}
 }

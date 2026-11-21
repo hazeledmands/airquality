@@ -230,3 +230,47 @@ func TestAPIErrorBody(t *testing.T) {
 		t.Errorf("err = %v", err)
 	}
 }
+
+// The weather table's original columns can't hold NULL, so an hour missing
+// any of them is skipped rather than stored with a fake zero.
+func TestHistory_SkipsHoursWithMissingValues(t *testing.T) {
+	body := `{"hourly":{
+		"time":["2026-04-17T00:00","2026-04-17T01:00","2026-04-17T02:00"],
+		"temperature_2m":[10,11,12],"relative_humidity_2m":[50,null,52],"dew_point_2m":[1,2,3],
+		"precipitation":[0,0,0],"weather_code":[1,1,1],"pressure_msl":[1010,1011,null],
+		"wind_speed_10m":[5,5,5],"uv_index":[0,0,0],"cloud_cover":[10,null,30]},
+		"daily":{"time":["2026-04-17"],"sunrise":["2026-04-17T13:00"],"sunset":["2026-04-18T02:00"]}}`
+	srv := serve(t, "/v1/forecast", []byte(body), nil)
+	defer srv.Close()
+	start := time.Date(2026, 4, 17, 0, 0, 0, 0, time.UTC)
+	rows, err := testClient(srv).History(t.Context(), start, start)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 1 || !rows[0].Time.Equal(start) {
+		t.Errorf("rows = %+v, want only 00:00 (01:00 lacks humidity, 02:00 pressure)", rows)
+	}
+}
+
+// The forecast comes in the station's local days (timezone=auto), four of
+// them, so the strip's three local days are complete; times are converted
+// to UTC with the response's offset.
+func TestForecast_LocalDaysConvertedToUTC(t *testing.T) {
+	body := `{"utc_offset_seconds":-28800,"hourly":{"time":["2026-11-21T00:00","2026-11-21T01:00"],
+		"temperature_2m":[5,6],"precipitation_probability":[10,20],"precipitation":[0,0],
+		"cloud_cover":[50,60],"uv_index":[0,0],"wind_speed_10m":[3,3],"weather_code":[3,3]}}`
+	srv := serve(t, "/v1/forecast", []byte(body), func(r *http.Request) {
+		q := r.URL.Query()
+		if q.Get("timezone") != "auto" || q.Get("forecast_days") != "4" {
+			t.Errorf("timezone=%q forecast_days=%q, want auto and 4", q.Get("timezone"), q.Get("forecast_days"))
+		}
+	})
+	defer srv.Close()
+	hours, err := testClient(srv).Forecast(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(hours) != 2 || !hours[0].Time.Equal(time.Date(2026, 11, 21, 8, 0, 0, 0, time.UTC)) {
+		t.Errorf("first hour = %v, want 08:00 UTC (local midnight at UTC-8)", hours[0].Time)
+	}
+}

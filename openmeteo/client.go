@@ -140,7 +140,9 @@ func (c *Client) get(ctx context.Context, base, path string, params url.Values) 
 	}
 	q.Set("latitude", strconv.FormatFloat(c.Latitude, 'f', -1, 64))
 	q.Set("longitude", strconv.FormatFloat(c.Longitude, 'f', -1, 64))
-	q.Set("timezone", "GMT")
+	if q.Get("timezone") == "" {
+		q.Set("timezone", "GMT")
+	}
 	u := strings.TrimRight(base, "/") + path + "?" + q.Encode()
 
 	backoff := c.RetryBase
@@ -374,7 +376,14 @@ func (c *Client) AirQuality(ctx context.Context) (AirQuality, error) {
 // hourly is an Open-Meteo "hourly" block: a time array and one array per variable.
 type hourly map[string]json.RawMessage
 
-func (h hourly) times() ([]time.Time, error) {
+// times parses the time column. Open-Meteo sends local wall-clock times
+// without an offset; offsetSeconds (utc_offset_seconds, 0 for GMT) converts
+// them to UTC.
+func (h hourly) times(offsetSeconds ...int) ([]time.Time, error) {
+	offset := 0
+	if len(offsetSeconds) > 0 {
+		offset = offsetSeconds[0]
+	}
 	var raw []string
 	if err := json.Unmarshal(h["time"], &raw); err != nil {
 		return nil, fmt.Errorf("hourly time: %w", err)
@@ -385,7 +394,7 @@ func (h hourly) times() ([]time.Time, error) {
 		if !ok {
 			return nil, fmt.Errorf("hourly time %q", s)
 		}
-		out[i] = t
+		out[i] = t.Add(-time.Duration(offset) * time.Second)
 	}
 	return out, nil
 }
@@ -445,22 +454,26 @@ func (c *Client) AirQualityHistory(ctx context.Context, start, end time.Time) ([
 
 const forecastVars = "temperature_2m,precipitation_probability,precipitation,cloud_cover,uv_index,wind_speed_10m,weather_code"
 
-// Forecast returns the hourly forecast for today and the next two days (UTC).
+// Forecast returns the hourly forecast from the start of the station's local
+// today for four local days (timezone=auto), so the next three local days
+// are complete. Times are returned in UTC.
 func (c *Client) Forecast(ctx context.Context) ([]ForecastHour, error) {
 	body, err := c.get(ctx, c.baseURL, "/v1/forecast", url.Values{
 		"hourly":        {forecastVars},
-		"forecast_days": {"3"},
+		"forecast_days": {"4"},
+		"timezone":      {"auto"},
 	})
 	if err != nil {
 		return nil, fmt.Errorf("fetch forecast: %w", err)
 	}
 	var data struct {
+		Offset int    `json:"utc_offset_seconds"`
 		Hourly hourly `json:"hourly"`
 	}
 	if err := json.Unmarshal(body, &data); err != nil {
 		return nil, fmt.Errorf("parse forecast: %w", err)
 	}
-	times, err := data.Hourly.times()
+	times, err := data.Hourly.times(data.Offset)
 	if err != nil {
 		return nil, err
 	}
@@ -490,8 +503,9 @@ const historyVars = "temperature_2m,relative_humidity_2m,dew_point_2m,precipitat
 // History returns hourly weather for the UTC days from start to end from
 // the historical-forecast API (the model's best estimate, available up to
 // today, unlike the ERA5 archive which lags about five days). Each reading
-// carries its day's sunrise and sunset. Hours with no temperature are
-// skipped, since the weather table needs one.
+// carries its day's sunrise and sunset. Hours missing any of the weather
+// table's original (non-null) values are skipped rather than stored with a
+// fake zero.
 func (c *Client) History(ctx context.Context, start, end time.Time) ([]Reading, error) {
 	params := dateParams(start, end)
 	params.Set("hourly", historyVars)
@@ -530,17 +544,27 @@ func (c *Client) History(ctx context.Context, start, end time.Time) ([]Reading, 
 	col := data.Hourly.column
 	temp, rh, dew, precip := col("temperature_2m"), col("relative_humidity_2m"), col("dew_point_2m"), col("precipitation")
 	code, pres, wind, uv, cloud := col("weather_code"), col("pressure_msl"), col("wind_speed_10m"), col("uv_index"), col("cloud_cover")
-	val := func(name string, p *float64) float64 {
-		if v := c.check(name, p); v != nil {
-			return *v
-		}
-		return 0
-	}
 	out := make([]Reading, 0, len(times))
 	for i, t := range times {
-		if c.check("temperature_2m", at(temp, i)) == nil {
+		required := map[string]*float64{
+			"temperature_2m": at(temp, i), "relative_humidity_2m": at(rh, i), "dew_point_2m": at(dew, i),
+			"precipitation": at(precip, i), "weather_code": at(code, i), "pressure_msl": at(pres, i),
+			"wind_speed_10m": at(wind, i), "uv_index": at(uv, i),
+		}
+		vals := map[string]float64{}
+		complete := true
+		for name, p := range required {
+			v := c.check(name, p)
+			if v == nil {
+				complete = false
+				break
+			}
+			vals[name] = *v
+		}
+		if !complete {
 			continue
 		}
+		val := func(name string, _ *float64) float64 { return vals[name] }
 		s := days[t.Format("2006-01-02")]
 		out = append(out, Reading{
 			Time: t, Latitude: c.Latitude, Longitude: c.Longitude,

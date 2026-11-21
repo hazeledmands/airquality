@@ -70,7 +70,7 @@ func newDataCache(ctx context.Context, db *store.Store, withTempest bool) (*data
 			return nil, fmt.Errorf("backfill air quality: %w", err)
 		}
 		c.addAirQuality(aq)
-		fc, err := db.QueryForecast(ctx, to.Add(-time.Hour), to.Add(4*24*time.Hour))
+		fc, err := db.QueryForecast(ctx, to.Add(-24*time.Hour), to.Add(5*24*time.Hour))
 		if err != nil {
 			return nil, fmt.Errorf("backfill forecast: %w", err)
 		}
@@ -421,14 +421,31 @@ func (c *dataCache) addAirQuality(rows []openmeteo.AirQuality) {
 	}
 }
 
+// snapshotAirQuality returns samples in [from, to], plus the last sample
+// before from (if within two hours), so the hourly line starts at the left
+// edge of the chart.
 func (c *dataCache) snapshotAirQuality(from, to time.Time) []openmeteo.AirQuality {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	out := make([]openmeteo.AirQuality, 0)
-	for _, a := range c.outdoorAir {
-		if !a.Time.Before(from) && !a.Time.After(to) {
+	var before *openmeteo.AirQuality
+	for i, a := range c.outdoorAir {
+		if a.Time.Before(from) {
+			if from.Sub(a.Time) <= 2*time.Hour {
+				before = &c.outdoorAir[i]
+			}
+			continue
+		}
+		if !a.Time.After(to) {
 			out = append(out, a)
 		}
+	}
+	if before != nil {
+		// Served at from, as the value in effect when the range starts, so
+		// it doesn't stretch the shared x axis to the left.
+		first := *before
+		first.Time = from
+		out = append([]openmeteo.AirQuality{first}, out...)
 	}
 	return out
 }

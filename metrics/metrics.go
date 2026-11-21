@@ -1,7 +1,6 @@
 package metrics
 
 import (
-	"fmt"
 	"net/http"
 
 	"github.com/hazel/airquality/logger"
@@ -170,8 +169,7 @@ func (m *Metrics) Update(rec logger.Record, room string) {
 // Shared measurements (temp, humidity, dewpoint, pressure) reuse the existing
 // gauges with source="weather". Weather-only fields get dedicated gauges.
 func (m *Metrics) UpdateWeather(r openmeteo.Reading) {
-	sensorID := fmt.Sprintf("%.4f,%.4f", r.Latitude, r.Longitude)
-	l := []string{"weather", sensorID, "outdoor", "outdoor"}
+	l := weatherLabels(r.Latitude, r.Longitude)
 	m.temperature.WithLabelValues(l...).Set(r.TempC)
 	m.humidity.WithLabelValues(l...).Set(r.Humidity)
 	m.dewpoint.WithLabelValues(l...).Set(r.DewPointC)

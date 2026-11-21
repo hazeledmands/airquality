@@ -36,7 +36,8 @@ type dashboardData struct {
 	Annotations []annotationJSON `json:"annotations"`
 	Tempest     tempestData      `json:"tempest"`
 	// OutdoorAir is Open-Meteo's hourly air quality in the range; Forecast is
-	// the latest forecast from this hour on, whatever the range.
+	// the latest forecast from 24 h ago on, whatever the range, so the page
+	// has all of the station's local today for its high and low.
 	OutdoorAir []outdoorAirJSON `json:"outdoor_air"`
 	Forecast   []forecastJSON   `json:"forecast"`
 }
@@ -410,7 +411,7 @@ func dataHandler(cache *dataCache, cfg config.Config) http.HandlerFunc {
 			Weather:     weatherReadings(weatherRows),
 			Annotations: make([]annotationJSON, 0, len(annotationRows)),
 			OutdoorAir:  outdoorAirRows(cache.snapshotAirQuality(from, to)),
-			Forecast:    forecastRows(cache.forecastFrom(time.Now().UTC().Truncate(time.Hour))),
+			Forecast:    forecastRows(cache.forecastFrom(time.Now().UTC().Add(-24 * time.Hour))),
 			Tempest:     buildTempestData(cache.tempestEnabled, station, devices, tempestRows, cache.latestTempest(from, to), tempestEvents, cfg),
 		}
 		for _, a := range annotationRows {

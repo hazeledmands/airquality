@@ -31,7 +31,8 @@ describe('airDatasets', () => {
     const rows = [row('2026-11-21T10:00:00Z', { us_aqi: 86, pm2_5: 24, ozone: 13, nitrogen_dioxide: 67 })];
     it('puts the AQI on its own axis and gases in µg/m³ on the other', () => {
         const ds = airDatasets(rows);
-        expect(ds.find(d => d.label === 'US AQI').yAxisID).toBe('yAQI');
+        // Labelled as the rolling-average index it is, not an hourly reading.
+        expect(ds.find(d => d.label === 'US AQI (rolling avg)').yAxisID).toBe('yAQI');
         for (const l of ['PM2.5', 'Ozone', 'NO₂']) expect(ds.find(d => d.label === l).yAxisID).toBe('yGas');
     });
     it('adds pollen only where the model covers it (Europe)', () => {
@@ -54,19 +55,24 @@ describe('formatAirLatest', () => {
 });
 
 describe('forecast strip', () => {
-    // Local midday "now"; hours spanning three local days.
+    // The API sends four local days from local midnight; "now" is midday.
     const now = new Date(2026, 10, 21, 12, 0).getTime();
     const hours = [];
-    for (let h = 0; h < 72; h++) {
-        const t = new Date(2026, 10, 21, 12 + h);
-        hours.push({ timestamp: t.toISOString(), temp_c: 10 + (h % 24) / 2, precip_probability: h < 6 ? 40 : 5, cloud_cover: 50 });
+    for (let h = 0; h < 4 * 24 - 5; h++) { // the fourth day is cut short
+        const t = new Date(2026, 10, 21, h);
+        // 06:00 is the coldest hour of each day; 15:00 the warmest.
+        const temp = (h % 24) === 6 ? 2 : (h % 24) === 15 ? 20 : 10;
+        hours.push({ timestamp: t.toISOString(), temp_c: temp, precip_probability: h < 18 ? 40 : 5, cloud_cover: 50 });
     }
-    it('summarises the next local days: high, low, chance of rain', () => {
+    it('lists only complete local days, today included', () => {
         const days = forecastDays(hours, now);
-        expect(days.length).toBe(3);
-        expect(days[0].label).toBe('Today');
-        expect(days[0].rainPct).toBe(40);
-        expect(days[0].hiF).toBeGreaterThan(days[0].loF);
+        expect(days.map(d => d.label)).toEqual(['Today', 'Sun', 'Mon']);
+    });
+    it("uses the whole of today, including hours already past, for today's high and low", () => {
+        const today = forecastDays(hours, now)[0];
+        expect(today.loF).toBeCloseTo(35.6); // 2 °C at 06:00, before "now"
+        expect(today.hiF).toBeCloseTo(68);
+        expect(today.rainPct).toBe(40);
     });
     it('formats a one-line strip with the next 6 hours', () => {
         const html = formatForecastStrip(hours, now);

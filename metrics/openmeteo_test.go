@@ -10,7 +10,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/testutil"
 )
 
-var outdoor = []string{"weather", "12.3456,-65.4321", "outdoor", "outdoor"}
+var outdoor = []string{"weather", "open-meteo", "outdoor", "outdoor"}
 
 func TestUpdateWeather_CloudCover(t *testing.T) {
 	m := New()
@@ -42,10 +42,10 @@ func TestUpdateAirQuality(t *testing.T) {
 	m.Handler().ServeHTTP(w, httptest.NewRequest("GET", "/metrics", nil))
 	body := w.Body.String()
 	for _, want := range []string{
-		`airquality_ozone_ugm3{location="outdoor",room="outdoor",sensor_id="12.3456,-65.4321",source="weather"} 13`,
+		`airquality_ozone_ugm3{location="outdoor",room="outdoor",sensor_id="open-meteo",source="weather"} 13`,
 		`airquality_no2_ugm3{`, `airquality_so2_ugm3{`, `airquality_co_ugm3{`,
 		`airquality_european_aqi{`, `airquality_dust_ugm3{`,
-		`airquality_pollen_grains_m3{location="outdoor",pollen="grass",room="outdoor",sensor_id="12.3456,-65.4321",source="weather"} 12`,
+		`airquality_pollen_grains_m3{location="outdoor",pollen="grass",room="outdoor",sensor_id="open-meteo",source="weather"} 12`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("/metrics lacks %s", want)
@@ -77,5 +77,18 @@ func TestUpdateForecast(t *testing.T) {
 	}
 	if n := testutil.CollectAndCount(m.forecastTemp); n != 6 {
 		t.Errorf("forecast temp series = %d, want one per horizon (1,3,6,12,24,48)", n)
+	}
+}
+
+// The location must not appear in any label: only one is ever configured.
+func TestOpenMeteoLabelsCarryNoCoordinates(t *testing.T) {
+	m := New()
+	m.UpdateWeather(openmeteo.Reading{Latitude: 12.3456, Longitude: -65.4321, TempC: 1, CloudCover: fp(5)})
+	m.UpdateAirQuality(openmeteo.AirQuality{Latitude: 12.3456, Longitude: -65.4321, PM25: fp(1)})
+	m.UpdateForecast(12.3456, -65.4321, []openmeteo.ForecastHour{{Time: time.Now().Add(100 * time.Hour), TempC: fp(1)}}, time.Now())
+	w := httptest.NewRecorder()
+	m.Handler().ServeHTTP(w, httptest.NewRequest("GET", "/metrics", nil))
+	if strings.Contains(w.Body.String(), "12.3456") || strings.Contains(w.Body.String(), "65.4321") {
+		t.Error("/metrics carries the coordinates")
 	}
 }
