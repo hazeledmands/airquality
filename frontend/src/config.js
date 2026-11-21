@@ -23,3 +23,7 @@ export function pinAxisWidth(scale) {
 
 // Default date range preset shown on first load (milliseconds).
 export const DEFAULT_DATE_RANGE_MS = 259200000; // 3 days
+
+// Secondary text (ticks, legends, labels, notes) on the #0f0f1a background:
+// 6.0:1, above the WCAG AA 4.5:1 for small text.
+export const MUTED_TEXT = '#8f8fa3';

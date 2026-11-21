@@ -45,8 +45,8 @@ type tempestData struct {
 	Observations []tempestObsJSON    `json:"observations"`
 	// Latest is the newest raw (never downsampled) observation in range,
 	// for the latest-values strip.
-	Latest *tempestObsJSON `json:"latest"`
-	Events []tempest.Event `json:"events"`
+	Latest *tempestObsJSON    `json:"latest"`
+	Events []tempestEventJSON `json:"events"`
 }
 
 type tempestStationJSON struct {
@@ -57,13 +57,42 @@ type tempestStationJSON struct {
 	Devices    []int   `json:"devices"`
 }
 
-// tempestObsJSON is an observation (or bucket) plus the values the Tempest
-// does not report but the dashboard needs: dew point, shared with indoor
-// sensors, and sea-level pressure, comparable to Open-Meteo's.
+// tempestObsJSON is what the dashboard draws from an observation (or
+// bucket): the fields the page reads, plus dew point (shared with indoor
+// sensors) and sea-level pressure (comparable to Open-Meteo's). Device ID,
+// wind sample interval, Rain Check per-interval rain and the analysis type
+// stay in the database and on /metrics.
 type tempestObsJSON struct {
-	tempestBucket
-	DewPointC          *float64 `json:"dewpoint_c"`
-	SeaLevelPressureMB *float64 `json:"sea_level_pressure_mb"`
+	Timestamp              time.Time `json:"timestamp"`
+	WindLullMS             *float64  `json:"wind_lull_ms"`
+	WindAvgMS              *float64  `json:"wind_avg_ms"`
+	WindGustMS             *float64  `json:"wind_gust_ms"`
+	WindDirectionDeg       *float64  `json:"wind_direction_deg"`
+	StationPressureMB      *float64  `json:"station_pressure_mb"`
+	AirTempC               *float64  `json:"air_temp_c"`
+	RelativeHumidity       *float64  `json:"relative_humidity"`
+	IlluminanceLux         *float64  `json:"illuminance_lux"`
+	UVIndex                *float64  `json:"uv_index"`
+	SolarRadiationWM2      *float64  `json:"solar_radiation_wm2"`
+	RainMM                 *float64  `json:"rain_mm"`
+	RainMaxMM              *float64  `json:"rain_max_mm"`
+	PrecipType             *int      `json:"precip_type"`
+	LightningAvgDistanceKM *float64  `json:"lightning_avg_distance_km"`
+	LightningStrikeCount   *int      `json:"lightning_strike_count"`
+	BatteryV               *float64  `json:"battery_v"`
+	ReportIntervalMin      *int      `json:"report_interval_min"`
+	LocalDayRainMM         *float64  `json:"local_day_rain_mm"`
+	LocalDayRainFinalMM    *float64  `json:"local_day_rain_final_mm"`
+	DewPointC              *float64  `json:"dewpoint_c"`
+	SeaLevelPressureMB     *float64  `json:"sea_level_pressure_mb"`
+}
+
+// tempestEventJSON is an event as the dashboard draws it.
+type tempestEventJSON struct {
+	Timestamp  time.Time `json:"timestamp"`
+	Type       string    `json:"type"`
+	DistanceKM *float64  `json:"distance_km"`
+	Energy     *float64  `json:"energy"`
 }
 
 func tempestJSON(b tempestBucket, st *tempest.Station) tempestObsJSON {
@@ -71,7 +100,16 @@ func tempestJSON(b tempestBucket, st *tempest.Station) tempestObsJSON {
 	if b.RainMaxMM != nil {
 		b.RainMaxMM = finite(*b.RainMaxMM)
 	}
-	j := tempestObsJSON{tempestBucket: b}
+	o := b.Observation
+	j := tempestObsJSON{
+		Timestamp: o.Time, WindLullMS: o.WindLullMS, WindAvgMS: o.WindAvgMS, WindGustMS: o.WindGustMS,
+		WindDirectionDeg: o.WindDirectionDeg, StationPressureMB: o.StationPressureMB, AirTempC: o.AirTempC,
+		RelativeHumidity: o.RelativeHumidity, IlluminanceLux: o.IlluminanceLux, UVIndex: o.UVIndex,
+		SolarRadiationWM2: o.SolarRadiationWM2, RainMM: o.RainMM, RainMaxMM: b.RainMaxMM, PrecipType: o.PrecipType,
+		LightningAvgDistanceKM: o.LightningAvgDistanceKM, LightningStrikeCount: o.LightningStrikeCount,
+		BatteryV: o.BatteryV, ReportIntervalMin: o.ReportIntervalMin, LocalDayRainMM: o.LocalDayRainMM,
+		LocalDayRainFinalMM: o.LocalDayRainFinalMM,
+	}
 	if b.AirTempC != nil && b.RelativeHumidity != nil && *b.RelativeHumidity > 0 {
 		j.DewPointC = finite(calc.DewPoint(*b.AirTempC, *b.RelativeHumidity))
 	}
@@ -104,9 +142,9 @@ func finite(v float64) *float64 {
 }
 
 func buildTempestData(enabled bool, st *tempest.Station, devs []tempest.Device, obs []tempestBucket, latest *tempest.Observation, evs []tempest.Event, cfg config.Config) tempestData {
-	td := tempestData{Enabled: enabled, Observations: make([]tempestObsJSON, 0, len(obs)), Events: evs}
-	if td.Events == nil {
-		td.Events = []tempest.Event{}
+	td := tempestData{Enabled: enabled, Observations: make([]tempestObsJSON, 0, len(obs)), Events: make([]tempestEventJSON, 0, len(evs))}
+	for _, e := range evs {
+		td.Events = append(td.Events, tempestEventJSON{Timestamp: e.Time, Type: e.Type, DistanceKM: e.DistanceKM, Energy: e.Energy})
 	}
 	if st != nil {
 		js := &tempestStationJSON{ID: st.ID, Name: st.Name, Room: st.Name, ElevationM: st.ElevationM, Devices: []int{}}
@@ -128,16 +166,15 @@ func buildTempestData(enabled bool, st *tempest.Station, devs []tempest.Device, 
 	return td
 }
 
+// weatherReading is what the dashboard draws from Open-Meteo. The location
+// is deliberately absent: the page is public. Weather code and pressure stay
+// in the database and on /metrics.
 type weatherReading struct {
 	Timestamp       string  `json:"timestamp"`
-	Latitude        float64 `json:"latitude"`
-	Longitude       float64 `json:"longitude"`
 	TempC           float64 `json:"temp_c"`
 	Humidity        float64 `json:"humidity"`
 	DewPointC       float64 `json:"dewpoint_c"`
 	PrecipitationMM float64 `json:"precipitation_mm"`
-	WeatherCode     int     `json:"weather_code"`
-	PressureHPa     float64 `json:"pressure_hpa"`
 	WindSpeedKMH    float64 `json:"wind_speed_kmh"`
 	UVIndex         float64 `json:"uv_index"`
 	Sunrise         string  `json:"sunrise"` // RFC3339, "" if zero
@@ -149,14 +186,10 @@ func weatherReadings(rows []openmeteo.Reading) []weatherReading {
 	for _, r := range rows {
 		wr := weatherReading{
 			Timestamp:       r.Time.UTC().Format(time.RFC3339),
-			Latitude:        r.Latitude,
-			Longitude:       r.Longitude,
 			TempC:           r.TempC,
 			Humidity:        r.Humidity,
 			DewPointC:       r.DewPointC,
 			PrecipitationMM: r.PrecipitationMM,
-			WeatherCode:     r.WeatherCode,
-			PressureHPa:     r.PressureHPa,
 			WindSpeedKMH:    r.WindSpeedKMH,
 			UVIndex:         r.UVIndex,
 		}
@@ -181,17 +214,14 @@ type sensorData struct {
 	Readings []reading `json:"readings"`
 }
 
+// reading is what the dashboard draws per sensor. Pressure, PM1, PM10, AQI
+// and VOC stay in the database and on /metrics; the page never reads them.
 type reading struct {
 	Timestamp string  `json:"timestamp"`
 	TempC     float64 `json:"temp_c"`
 	Humidity  float64 `json:"humidity"`
 	DewPointC float64 `json:"dewpoint_c"`
-	Pressure  float64 `json:"pressure"`
-	PM1       float64 `json:"pm1"`
 	PM25      float64 `json:"pm25"`
-	PM10      float64 `json:"pm10"`
-	AQI       float64 `json:"aqi"`
-	VOC       float64 `json:"voc"`
 	P03       float64 `json:"p03"`
 	P05       float64 `json:"p05"`
 	P10       float64 `json:"p10"`
@@ -206,14 +236,11 @@ type acStateData struct {
 	Changes  []acStateChange `json:"changes"`
 }
 
+// acStateChange is what the AC band draws: when the unit was on. The other
+// state fields stay in the database.
 type acStateChange struct {
-	Timestamp  string `json:"timestamp"`
-	On         bool   `json:"on"`
-	Mode       string `json:"mode"`
-	TargetTemp int    `json:"target_temp"`
-	TempUnit   string `json:"temp_unit"`
-	FanLevel   string `json:"fan_level"`
-	Reason     string `json:"reason"`
+	Timestamp string `json:"timestamp"`
+	On        bool   `json:"on"`
 }
 
 // groupReadings groups records per sensor, resolving each sensor's room and
@@ -244,12 +271,7 @@ func groupReadings(records []logger.Record, latestLocs map[string]string, cfg co
 			TempC:     r.TempC,
 			Humidity:  r.Humidity,
 			DewPointC: r.DewPointC,
-			Pressure:  r.Pressure,
-			PM1:       r.PM1,
 			PM25:      r.PM25,
-			PM10:      r.PM10,
-			AQI:       r.AQI,
-			VOC:       r.VOC,
 			P03:       r.P03,
 			P05:       r.P05,
 			P10:       r.P10,
@@ -282,15 +304,7 @@ func groupACStates(records []logger.ACStateRecord, latestRooms map[string]string
 			stateMap[r.DeviceID] = state
 			order = append(order, r.DeviceID)
 		}
-		state.Changes = append(state.Changes, acStateChange{
-			Timestamp:  r.Timestamp,
-			On:         r.On,
-			Mode:       r.Mode,
-			TargetTemp: r.TargetTemp,
-			TempUnit:   r.TempUnit,
-			FanLevel:   r.FanLevel,
-			Reason:     r.Reason,
-		})
+		state.Changes = append(state.Changes, acStateChange{Timestamp: r.Timestamp, On: r.On})
 	}
 	result := make([]acStateData, 0, len(order))
 	for _, key := range order {

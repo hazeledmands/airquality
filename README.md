@@ -37,8 +37,8 @@ Schema migrations live in `supabase/migrations/`. Apply them with `psql` or the 
 Set `WEATHER_LAT` and `WEATHER_LON` to fetch outdoor conditions from [Open-Meteo](https://open-meteo.com/) on each capture cycle. Requires `DATABASE_URL` — weather data is stored in the `weather` table and surfaced in the dashboard.
 
 ```sh
-export WEATHER_LAT="37.8313"
-export WEATHER_LON="-122.2853"
+export WEATHER_LAT="12.3456"
+export WEATHER_LON="-65.4321"
 ```
 
 ### WeatherFlow Tempest (optional)
@@ -72,8 +72,8 @@ Non-secret settings can live in a YAML file passed with `--config` (or `AIRQUALI
 purpleair:
   hosts: [192.168.1.218]       # PURPLEAIR_HOSTS overrides
 weather:
-  lat: 37.8313                 # WEATHER_LAT / WEATHER_LON override
-  lon: -122.2853
+  lat: 12.3456                 # WEATHER_LAT / WEATHER_LON override
+  lon: -65.4321
 tempest:
   station_id: 123456           # TEMPEST_STATION_ID overrides; default: first with a Tempest
   poll_interval: 1m            # REST poll cadence (minimum 30s)
@@ -143,10 +143,17 @@ With it set, the proxy must gate `/login` and `/api/me` and every non-GET reques
 
 ## Dashboard
 
-In continuous mode, a web dashboard is served at `http://localhost:50233/` showing live charts. The default view groups all metrics (temperature, humidity, dew point, PM2.5, AC state) per room. A "By Metric" view at `/by-metric` shows one chart per metric type. Both views auto-refresh every 60 seconds. When a room has more than one device, every device's lines are drawn in the same per-metric colors. The tooltip names each device ("Temperature · PurpleAir (adj)"), the legend keeps one entry per metric (clicking it toggles all of that metric's lines), and the latest-values strip shows each device's reading ("70.1 / 70.8°F") followed by the device names in the same order. The date-range picker includes quick presets (1h, 8h, 1d, 3d, 1w) and prev/next buttons to pan through time. Hovering over any chart shows a synced vertical crosshair line across all charts at the same timestamp. A JSON API is available at `/api/data`.
+In continuous mode, a web dashboard is served at `http://localhost:50233/` showing live charts. The default view groups all metrics (temperature, humidity, dew point, PM2.5, AC state) per room. A "By Metric" view at `/by-metric` shows one chart per metric type. Both views auto-refresh every 60 seconds. When a room has more than one device, every device's lines are drawn in the same per-metric colors. The tooltip names each device ("Temperature · PurpleAir (adj)"), the legend keeps one entry per metric (clicking it toggles all of that metric's lines), and the latest-values strip shows each device's reading ("70.1 / 70.8°F") followed by the device names in the same order. The date-range picker includes quick presets (1h, 8h, 1d, 3d, 1w) and prev/next buttons to pan through time. Hovering over any chart shows a synced vertical crosshair line across all charts at the same timestamp. A JSON API is available at `/api/data`. It carries only what the page draws (no location, and none of the PurpleAir pressure/PM1/PM10/AQI/VOC values, AC mode/fan/target, or Tempest device ID, wind sample interval and Rain Check analysis fields, which are all still in the database and on `/metrics`). The page and `/api/data` are gzipped for clients that accept it (the 3-day view is about 60 KB instead of 550 KB). The refresh pauses while the tab is hidden and catches up when it is shown again.
+
+**Phones** (up to 600 px wide, or up to 500 px tall in landscape) get their own layout:
+- The header is one row: ◀ range ▶, zoom out/in (×2) buttons, and a ⋯ button that opens a sheet with Peaks, High humidity, Outdoor temp and Sign in. The header is sticky, so nothing hides under it. The status line sits below it.
+- Charts have fixed heights (240 px, 200 px for Tempest panels; the wind direction strip is 110 px at every width), one-line time labels, and an HTML key row of 44 px buttons instead of the canvas legend (legend state still lives in the URL).
+- Tooltips are replaced by a touch readout: tap a chart, or press and hold (or tap, then drag sideways) to scrub the synced crosshair. The values show in one readout under the header; tapping elsewhere or scrolling dismisses it. Signed-in users add notes from the readout's "Add note here" button. Drag-to-zoom stays mouse-only, so a finger on a chart still scrolls the page.
+- The Tempest strip shows temperature, humidity, wind and rain today, with the rest behind "more". Drag handles are hidden.
+- Whether the ⋯ sheet, the readout or the expanded strip is open is transient, so none of it goes in the URL.
 
 When `WEATHER_LAT`/`WEATHER_LON` are configured, the rooms view also shows:
-- **Outdoor weather card** — current conditions strip (temp, humidity, wind, precip) plus a dual-axis chart of outdoor temperature and UV index
+- **Outdoor weather card** — current conditions strip (temp, humidity, wind in mph, precip) plus a dual-axis chart of outdoor temperature and UV index. The heading never shows the location
 - **Daylight shading** — non-daylight hours are shaded on all charts using the sunrise/sunset times from Open-Meteo
 - **Outdoor temp overlay** — a toggle adds outdoor temperature as a dashed line on each indoor room chart for comparison; state persists in the URL (`?outdoorTemp=1`)
 

@@ -330,8 +330,8 @@ func TestQueryWeather_RoundTrip(t *testing.T) {
 
 	r := openmeteo.Reading{
 		Time:            ts,
-		Latitude:        37.83,
-		Longitude:       -122.28,
+		Latitude:        12.34,
+		Longitude:       -65.43,
 		TempC:           18.5,
 		Humidity:        60.0,
 		DewPointC:       10.5,

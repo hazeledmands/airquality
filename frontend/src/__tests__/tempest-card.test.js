@@ -4,6 +4,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 vi.mock('../charts.js', () => ({ xTickCallback: vi.fn() }));
 
 import { buildTempestSection, updateTempestSection, tooltipLabel, secondaryAspect, buildEmptyTempestSection, tempestPanelOpts } from '../tempest-card.js';
+import { CHART_HEIGHTS } from '../layout.js';
 
 // Minimal Chart stand-in: records config, supports visibility like Chart.js.
 class FakeChart {
@@ -123,9 +124,8 @@ describe('wind direction strip', () => {
         expect(tempestPanelOpts('direction', 2.4).scales.x.ticks.display).toBe(false);
         expect(tempestPanelOpts('wind', 2.4).scales.x.ticks.display).not.toBe(false);
     });
-    it('is tall enough on a phone to keep N, S and N apart', () => {
-        // 343 px wide plot / aspect >= ~60 px of chart height
-        expect(343 / tempestPanelOpts('direction', 2.4).aspectRatio).toBeGreaterThanOrEqual(60);
+    it('is a fixed pixel height on a phone', () => {
+        expect(tempestPanelOpts('direction', 2.4, true).maintainAspectRatio).toBe(false);
     });
 });
 
@@ -158,14 +158,71 @@ describe('wind direction axis', () => {
         expect(label).toMatch(/from/i);
     });
 
-    it('has room for five labels on a phone', () => {
-        // 343 px plot width on a 375 px screen; five 10 px labels need ~85 px.
-        expect(343 / tempestPanelOpts('direction', 2.4).aspectRatio).toBeGreaterThanOrEqual(85);
+    it('has room for five labels at every width', () => {
+        // Five 10 px labels need ~85 px. Regression: at 601-820 px the strip
+        // was an aspect ratio of an aspect ratio and collapsed to 30-49 px.
+        expect(CHART_HEIGHTS.direction).toBeGreaterThanOrEqual(90);
+        for (const [w, h] of [[375, 812], [700, 900], [820, 1180], [1280, 800]]) {
+            globalThis.innerWidth = w; globalThis.innerHeight = h;
+            const { panel } = render({ enabled: true, station: { name: 'Home' }, observations: [ob(0, { wind_avg_ms: 1, wind_direction_deg: 70 })], latest: null, events: [] });
+            expect(panel('direction').chart.options.maintainAspectRatio, `width ${w}`).toBe(false);
+            expect(panel('direction').box.style.height, `width ${w}`).toBe(`${CHART_HEIGHTS.direction}px`);
+        }
     });
 
     it('tooltips name the compass point the wind comes from', () => {
         const { panel } = render({ enabled: true, station: { name: 'Home' }, observations: [ob(0, { wind_avg_ms: 1, wind_direction_deg: 70 })], latest: null, events: [] });
         const ds = panel('direction').chart.data.datasets[0];
         expect(tooltipLabel({ dataset: ds, raw: ds.data[0], parsed: { y: 70 } })).toBe('From: 70° ENE');
+    });
+});
+
+describe('phone layout', () => {
+    const obs = [ob(0, { air_temp_c: 10, wind_avg_ms: 1, wind_gust_ms: 2 }), ob(1, { air_temp_c: 11, wind_avg_ms: 2, wind_gust_ms: 3 })];
+    const tempest = { enabled: true, station: { name: 'Home' }, observations: obs, latest: obs[1], events: [] };
+
+    it('gives every panel a fixed height and an HTML key row instead of the canvas legend', () => {
+        globalThis.innerWidth = 390; globalThis.innerHeight = 664;
+        const { panel } = render(tempest);
+        expect(panel('wind').box.style.height).toBe(`${CHART_HEIGHTS.secondary}px`);
+        expect(panel('outdoor').box.style.height).toBe(`${CHART_HEIGHTS.main}px`);
+        expect(panel('wind').chart.options.plugins.legend.display).toBe(false);
+        expect(panel('wind').chart.options.plugins.tooltip.enabled).toBe(false);
+        const keys = [...panel('wind').keyRow.querySelectorAll('button')].map(b => b.textContent);
+        expect(keys).toEqual(['Average', 'Gust', 'Lull']);
+        expect(panel('direction').keyRow.children).toHaveLength(0);
+    });
+
+    it('a key-row tap toggles the dataset and persists ?tempestHidden', () => {
+        globalThis.innerWidth = 390; globalThis.innerHeight = 664;
+        const { panel } = render(tempest);
+        const gust = [...panel('wind').keyRow.querySelectorAll('button')].find(b => b.textContent === 'Gust');
+        gust.click();
+        expect(new URLSearchParams(location.search).get('tempestHidden')).toBe('gust,lux');
+        expect(panel('wind').chart.data.datasets.find(d => d.key === 'gust').hidden).toBe(true);
+    });
+
+    it('keeps the desktop layout on wide screens', () => {
+        globalThis.innerWidth = 1280; globalThis.innerHeight = 800;
+        const { panel } = render(tempest);
+        expect(panel('wind').box.style.height).toBe('');
+        expect(panel('wind').chart.options.maintainAspectRatio).toBe(true);
+        expect(panel('wind').chart.options.plugins.legend.display).toBe(true);
+    });
+});
+
+describe('latest-values strip expand', () => {
+    it('has a control that reveals the secondary values and survives a refresh', () => {
+        const latest = ob(0, { air_temp_c: 10, relative_humidity: 70, uv_index: 2, battery_v: 2.6 });
+        const tempest = { enabled: true, station: { name: 'Home' }, observations: [latest], latest, events: [] };
+        const { section, panels } = render(tempest);
+        const strip = section.querySelector('#tempest-current');
+        const more = strip.querySelector('.strip-more');
+        expect(more.getAttribute('aria-expanded')).toBe('false');
+        more.click();
+        expect(strip.classList.contains('expanded')).toBe(true);
+        updateTempestSection(panels, tempest, 60_000);
+        expect(strip.classList.contains('expanded')).toBe(true);
+        expect(strip.querySelector('.strip-more').getAttribute('aria-expanded')).toBe('true');
     });
 });

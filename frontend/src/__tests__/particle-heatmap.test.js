@@ -293,3 +293,16 @@ describe('findClosestPoint', () => {
         expect(findClosestPoint([a, b], 8000)).toBe(b);
     });
 });
+
+// On narrow phones the full "0.3–0.5µm" label is wider than the label column
+// and ran off the left edge; it falls back to the short form.
+describe('heatmap row labels', () => {
+    it('fit inside the label column', () => {
+        const canvas = makeCanvas(320);
+        canvas._ctx.measureText = (s) => ({ width: s.length * 5.4 });
+        renderHeatmap(canvas, makeParticles({}), { min: 0, max: 1 });
+        for (const [text, x] of canvas._ctx.fillText.mock.calls) {
+            expect(text.length * 5.4, text).toBeLessThanOrEqual(x);
+        }
+    });
+});

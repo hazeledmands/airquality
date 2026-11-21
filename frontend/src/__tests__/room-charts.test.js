@@ -361,3 +361,26 @@ describe('formatLatestValues', () => {
         expect(formatLatestValues(makeRoom())).toBe('');
     });
 });
+
+describe('room chart axes (phone fixes)', () => {
+    const pmRoom = makeRoom({ pm: [{ data: [] }] });
+    it('pins the PM2.5 axis width so x axes line up, and starts it at 0', () => {
+        const y2 = combinedChartOpts(4, pmRoom).scales.y2;
+        expect(y2.min).toBe(0);
+        const scale = { width: 7 };
+        y2.afterFit(scale);
+        const y = { width: 3 };
+        combinedChartOpts(4, pmRoom).scales.y.afterFit(y);
+        expect(scale.width).toBe(y.width);
+    });
+    it('rounds the padded y-axis end labels', () => {
+        const opts = combinedChartOpts(4, pmRoom);
+        expect(opts.scales.y.ticks.callback(80.07)).toBe('80');
+        expect(opts.scales.y2.ticks.callback(36.3)).toBe('36');
+    });
+    it('uses legible secondary text colours', () => {
+        const opts = combinedChartOpts(4, pmRoom);
+        expect(opts.scales.x.ticks.color).not.toBe('#555');
+        expect(opts.plugins.legend.labels.color).not.toBe('#555');
+    });
+});

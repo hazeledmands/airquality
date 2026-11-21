@@ -56,3 +56,17 @@ describe('chartOpts', () => {
         expect(opts.scales.x.ticks.maxRotation).toBe(0);
     });
 });
+
+describe('xTickCallback on phones', () => {
+    it('returns one-line labels (no second date line)', async () => {
+        const { xTickCallback } = await import('../charts.js');
+        const prevW = globalThis.innerWidth, prevH = globalThis.innerHeight;
+        globalThis.innerWidth = 390; globalThis.innerHeight = 664;
+        const ticks = [Date.parse('2026-11-19T00:00:00'), Date.parse('2026-11-19T12:00:00'), Date.parse('2026-11-20T00:00:00')].map(value => ({ value }));
+        try {
+            for (let i = 0; i < ticks.length; i++) expect(typeof xTickCallback(ticks[i].value, i, ticks)).toBe('string');
+        } finally {
+            globalThis.innerWidth = prevW; globalThis.innerHeight = prevH;
+        }
+    });
+});

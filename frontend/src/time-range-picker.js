@@ -1,3 +1,4 @@
+import { isCompact, compactRangeLabel } from './layout.js';
 import { parseTimeExpr, resolveRange } from './timemath.js';
 
 export const QUICK_RANGES = [
@@ -74,7 +75,9 @@ export function setupTimeRangePicker({ onApply }) {
     let toExpr   = DEFAULT_TO;
 
     function updateTrigger() {
-        trigger.textContent = formatRangeLabel(fromExpr, toExpr);
+        const label = formatRangeLabel(fromExpr, toExpr);
+        trigger.textContent = isCompact() ? compactRangeLabel(label) : label;
+        trigger.title = label;
     }
 
     function updateNextBtn() {

@@ -29,3 +29,23 @@ export function createChartCard({ title, canvasId, chartId } = {}) {
 
     return { card, canvas };
 }
+
+/**
+ * A positioned box for one chart canvas, plus the HTML key row (legend) that
+ * phones show beneath it. The box's height is set by sizeChartBox().
+ * Returns { box, canvas, keyRow }.
+ */
+export function createChartBox(kind) {
+    const box = document.createElement('div');
+    box.className = `chart-box chart-box--${kind}`;
+    const canvas = document.createElement('canvas');
+    box.appendChild(canvas);
+    const keyRow = document.createElement('div');
+    keyRow.className = 'key-row';
+    return { box, canvas, keyRow };
+}
+
+/** Sets the box height for fixed-height layouts ('' lets the aspect ratio rule). */
+export function sizeChartBox(box, height) {
+    box.style.height = height ? `${height}px` : '';
+}

@@ -1,4 +1,5 @@
-import { CHART_ANIMATION_MS, pinAxisWidth } from './config.js';
+import { CHART_ANIMATION_MS, pinAxisWidth, MUTED_TEXT } from './config.js';
+import { roundTick } from './layout.js';
 import { xTickCallback } from './charts.js';
 import { makeWeatherTempSeries } from './data.js';
 
@@ -87,14 +88,14 @@ export function combinedChartOpts(ar, room) {
             x: {
                 type: 'time',
                 time: { tooltipFormat: 'ff' },
-                ticks: { color: '#555', autoSkip: true, maxTicksLimit: 8, maxRotation: 0, callback: xTickCallback, major: { enabled: true } },
+                ticks: { color: MUTED_TEXT, autoSkip: true, maxTicksLimit: 8, maxRotation: 0, callback: xTickCallback, major: { enabled: true } },
                 grid: { color: '#ffffff06' },
             },
             y: {
                 type: 'linear',
                 position: 'left',
                 title: { display: true, text: '\u00B0F', color: '#888', font: { size: 11 } },
-                ticks: { color: '#888' },
+                ticks: { color: '#888', callback: roundTick },
                 grid: { color: '#ffffff06' },
                 afterFit: pinAxisWidth,
             },
@@ -102,7 +103,7 @@ export function combinedChartOpts(ar, room) {
                 type: 'linear',
                 position: 'right',
                 title: { display: true, text: '%', color: '#888', font: { size: 11 } },
-                ticks: { color: '#888' },
+                ticks: { color: '#888', callback: roundTick },
                 grid: { drawOnChartArea: false },
                 min: 0,
                 max: 100,
@@ -114,7 +115,7 @@ export function combinedChartOpts(ar, room) {
                 position: 'bottom',
                 onClick: metricLegend.onClick,
                 labels: {
-                    color: '#555', boxWidth: 16, boxHeight: 1, padding: 10, font: { size: 10 },
+                    color: MUTED_TEXT, boxWidth: 16, boxHeight: 1, padding: 10, font: { size: 10 },
                     filter: metricLegend.filter,
                     generateLabels: metricLegend.generateLabels,
                 },
@@ -133,8 +134,10 @@ export function combinedChartOpts(ar, room) {
             type: 'linear',
             position: 'right',
             title: { display: true, text: '\u00B5g/m\u00B3', color: '#888', font: { size: 11 } },
-            ticks: { color: '#888' },
+            ticks: { color: '#888', callback: roundTick },
             grid: { drawOnChartArea: false },
+            min: 0,
+            afterFit: pinAxisWidth,
         };
     }
 
