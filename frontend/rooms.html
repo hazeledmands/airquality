@@ -16,14 +16,17 @@
             background: #0f0f1a;
             color: #e0e0e0;
             padding: 1.5rem;
-            padding-top: calc(1.5rem + 44px);
+            padding-top: 0;
         }
-        .status { color: #666; font-size: 0.8rem; white-space: nowrap; }
+        /* Below the header, not in it: in the bar it overflowed on phones. */
+        .status-line { display: flex; justify-content: flex-end; margin: 0.25rem 0 0.75rem; min-height: 1rem; }
+        .status { color: #8f8fa3; font-size: 0.75rem; }
+        /* Sticky, not fixed: the page flows below it whatever its height,
+           so nothing hides underneath when it wraps. */
         .date-range {
-            position: fixed;
+            position: sticky;
             top: 0;
-            left: 0;
-            right: 0;
+            margin: 0 -1.5rem;
             z-index: 100;
             display: flex;
             align-items: center;
@@ -101,7 +104,7 @@
             flex: 1;
         }
         .trp-field { display: flex; flex-direction: column; gap: 0.25rem; }
-        .trp-field label { font-size: 0.7rem; color: #666; text-transform: uppercase; letter-spacing: 0.05em; }
+        .trp-field label { font-size: 0.7rem; color: #8f8fa3; text-transform: uppercase; letter-spacing: 0.05em; }
         .trp-field input {
             background: #0e0e1a;
             border: 1px solid #ffffff15;
@@ -113,8 +116,8 @@
             outline: none;
         }
         .trp-field input:focus { border-color: #38bdf8; }
-        .trp-field input::placeholder { color: #444; }
-        .trp-hint { font-size: 0.7rem; color: #555; line-height: 1.4; }
+        .trp-field input::placeholder { color: #7a7a8c; }
+        .trp-hint { font-size: 0.7rem; color: #8f8fa3; line-height: 1.4; }
         #trpApply {
             background: #38bdf820;
             border: 1px solid #38bdf840;
@@ -160,7 +163,7 @@
         }
         .drag-handle {
             cursor: grab;
-            color: #555;
+            color: #77778a;
             font-size: 0.9rem;
             line-height: 1;
             user-select: none;
@@ -176,10 +179,65 @@
             overflow: hidden;
         }
         .tempest-panel { padding: 0.25rem 0; }
-        .tempest-panel.collapsed canvas { display: none; }
+        /* Chart.js sets display:block inline on the canvas, so hide its box. */
+        .tempest-panel.collapsed .chart-box,
+        .tempest-panel.collapsed .key-row { display: none; }
+        .chart-box { position: relative; }
+        /* Vertical swipes scroll the page; horizontal moves reach the touch
+           readout without a non-passive listener. */
+        .chart-box canvas { touch-action: pan-y pinch-zoom; }
+        .key-row { display: none; flex-wrap: wrap; gap: 0 0.25rem; }
+        .key-btn {
+            min-height: 44px;
+            padding: 0 0.6rem;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.4rem;
+            background: transparent;
+            border: none;
+            color: #b4b4c4;
+            font: inherit;
+            font-size: 0.8rem;
+            cursor: pointer;
+        }
+        .key-btn[aria-pressed="false"] { color: #8f8fa3; text-decoration: line-through; }
+        .key-swatch { width: 14px; height: 3px; border-radius: 2px; }
+        .panel-label .label-short { display: none; }
+        .readout {
+            position: fixed;
+            top: var(--header-h, 44px);
+            left: 0;
+            right: 0;
+            z-index: 90;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.15rem 0.9rem;
+            padding: 0.4rem 1rem 0.5rem;
+            background: #16172aee;
+            border-bottom: 1px solid #ffffff18;
+            font-size: 0.8rem;
+            color: #d0d0dc;
+        }
+        .readout[hidden] { display: none; }
+        .readout-title { flex-basis: 100%; color: #8f8fa3; font-size: 0.75rem; }
+        .readout-item { display: inline-flex; align-items: center; gap: 0.3rem; font-variant-numeric: tabular-nums; }
+        .readout-item i { width: 10px; height: 3px; border-radius: 2px; display: inline-block; }
+        .readout-add {
+            min-height: 44px;
+            padding: 0 0.75rem;
+            margin-top: 0.25rem;
+            background: #fbbf2420;
+            border: 1px solid #fbbf2450;
+            border-radius: 6px;
+            color: #fbbf24;
+            font: inherit;
+        }
+        .strip-more { display: none; }
+        .zoom-btn, #moreBtn { display: none; }
+        .more-sheet { display: contents; }
         .panel-label {
             font-size: 0.7rem;
-            color: #777;
+            color: #9a9aab;
             font-family: 'Spectral', Georgia, serif;
             font-style: italic;
             margin-bottom: 0.1rem;
@@ -192,7 +250,7 @@
         }
         .room-latest {
             display: flex;
-            gap: 1.5rem;
+            gap: 0.4rem 1.5rem;
             flex-wrap: wrap;
             margin-bottom: 0.75rem;
             font-size: 0.85rem;
@@ -200,9 +258,9 @@
             color: #bbb;
         }
         .room-latest .value { color: #e0e0e0; font-weight: 500; font-variant-numeric: tabular-nums; }
-        .room-latest .devices { color: #666; font-style: italic; }
+        .room-latest .devices { color: #8f8fa3; font-style: italic; }
         .no-data {
-            color: #444;
+            color: #8f8fa3;
             text-align: center;
             padding: 3rem;
             font-size: 0.9rem;
@@ -210,18 +268,75 @@
         #rooms-container:empty::after {
             content: 'Waiting for first sensor reading\2026';
             display: block;
-            color: #444;
+            color: #8f8fa3;
             text-align: center;
             padding: 3rem;
             font-size: 0.9rem;
         }
         @media (max-width: 600px) {
-            body { padding: 1rem; padding-top: calc(1rem + 44px); }
-            .date-range { padding: 0.5rem 1rem; gap: 0.4rem; }
+            body { padding: 1rem; padding-top: 0; }
+            .date-range { margin: 0 -1rem; }
             .status { font-size: 0.7rem; }
             .room-section h2 { font-size: 1rem; }
             .chart-card { padding: 0.5rem 0; }
-            .room-latest { font-size: 0.75rem; gap: 1rem; }
+            .room-latest { font-size: 0.75rem; gap: 0.25rem 1rem; }
+        }
+        /* Phones, portrait or landscape (matches isCompact() in layout.js). */
+        @media (max-width: 600px), (max-height: 500px) {
+            .date-range { flex-wrap: nowrap; padding: 0 0.5rem; gap: 0.25rem; }
+            .trp-wrap { flex: 1; min-width: 0; gap: 0.25rem; }
+            .date-range button, #moreBtn {
+                min-width: 44px;
+                min-height: 44px;
+                padding: 0 0.5rem;
+                font-size: 0.85rem;
+            }
+            #trp-trigger { flex: 1; min-width: 0; min-height: 44px; padding: 0 0.2rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+            .zoom-btn, #moreBtn { display: inline-flex; align-items: center; justify-content: center; }
+            #moreBtn { background: transparent; border: none; color: #c0c0d0; font-size: 1.3rem; border-radius: 6px; }
+            .more-sheet {
+                display: none;
+                position: absolute;
+                top: 100%;
+                right: 0;
+                left: 0;
+                flex-direction: column;
+                padding: 0.25rem 1rem 0.5rem;
+                background: #16172a;
+                border-bottom: 1px solid #ffffff18;
+                box-shadow: 0 8px 24px rgba(0,0,0,.5);
+            }
+            .more-sheet.open { display: flex; }
+            .more-sheet .toggle-label { min-height: 44px; font-size: 0.95rem; color: #c0c0d0; }
+            .more-sheet .toggle-label input { width: 22px; height: 22px; }
+            #signIn { min-height: 44px; display: flex; align-items: center; }
+            .key-row { display: flex; }
+            /* Reordering by drag isn't worth the scroll conflicts on a phone. */
+            .drag-handle { display: none; }
+            .panel-label .label-full { display: none; }
+            .panel-label .label-short { display: inline; }
+            .room-latest .secondary { display: none; }
+            .room-latest.expanded .secondary { display: inline; }
+            .strip-more {
+                display: inline-flex;
+                align-items: center;
+                min-height: 44px;
+                min-width: 44px;
+                justify-content: center;
+                padding: 0 0.5rem;
+                margin: -0.6rem 0;
+                background: transparent;
+                border: none;
+                color: #9fb4ff;
+                font: inherit;
+                cursor: pointer;
+            }
+            #trp-popover { position: fixed; top: var(--header-h, 44px); left: 0.5rem; right: 0.5rem; min-width: 0; max-height: calc(100vh - var(--header-h, 44px) - 1rem); overflow: auto; }
+            #trp-quick { display: grid; grid-template-columns: 1fr 1fr; }
+            #trp-quick button { min-height: 44px; }
+            /* 16 px stops iOS Safari zooming the page on focus. */
+            .trp-field input { font-size: 16px; min-height: 44px; }
+            #trpApply { min-height: 44px; }
         }
     </style>
 </head>
@@ -231,6 +346,8 @@
             <button id="trp-prev" title="Previous period">&#9664;</button>
             <button id="trp-trigger">Last 3 days</button>
             <button id="trp-next" title="Next period">&#9654;</button>
+            <button id="zoomOut" class="zoom-btn" title="Zoom out" aria-label="Zoom out">&minus;</button>
+            <button id="zoomIn" class="zoom-btn" title="Zoom in" aria-label="Zoom in">+</button>
             <div id="trp-popover" style="display:none">
                 <div id="trp-quick"></div>
                 <div class="trp-custom">
@@ -247,12 +364,16 @@
                 </div>
             </div>
         </div>
-        <label class="toggle-label"><input type="checkbox" id="showPeaks" checked> Peaks</label>
-        <label class="toggle-label"><input type="checkbox" id="showHumidity" checked> High humidity</label>
-        <label class="toggle-label"><input type="checkbox" id="showOutdoorTemp"> Outdoor temp</label>
-        <span class="status" id="status" style="margin-left: auto;">Loading&hellip;</span>
-        <a class="toggle-label" id="signIn" href="/login" hidden>Sign in to annotate</a>
+        <button id="moreBtn" aria-expanded="false" aria-controls="moreSheet" aria-label="More options" title="More options">&#8943;</button>
+        <div id="moreSheet" class="more-sheet">
+            <label class="toggle-label"><input type="checkbox" id="showPeaks" checked> Peaks</label>
+            <label class="toggle-label"><input type="checkbox" id="showHumidity" checked> High humidity</label>
+            <label class="toggle-label"><input type="checkbox" id="showOutdoorTemp"> Outdoor temp</label>
+            <a class="toggle-label" id="signIn" href="/login" hidden>Sign in to annotate</a>
+        </div>
     </div>
+    <div id="readout" class="readout" hidden aria-live="polite"></div>
+    <div class="status-line"><span class="status" id="status">Loading&hellip;</span></div>
     <div id="rooms-container"></div>
     <script type="module" src="/src/rooms.js"></script>
 </body>

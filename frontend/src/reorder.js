@@ -53,6 +53,7 @@ export function setupReorder(container, {
     let dragEl = null;
     let touchStartY = 0;
     let touchClone = null;
+    let orderAtStart = '';
 
     function getItems() {
         return Array.from(container.querySelectorAll(itemSelector));
@@ -132,6 +133,10 @@ export function setupReorder(container, {
         document.body.appendChild(touchClone);
 
         item.classList.add('dragging');
+        orderAtStart = getCurrentOrder().join(',');
+        // Listen to touchmove only while a handle drag runs: a non-passive
+        // listener on the whole container would make every scroll wait.
+        container.addEventListener('touchmove', onTouchMove, { passive: false });
     }
 
     function onTouchMove(e) {
@@ -159,6 +164,8 @@ export function setupReorder(container, {
     }
 
     function onTouchEnd() {
+        if (!dragEl && !touchClone) return; // not a handle drag
+        container.removeEventListener('touchmove', onTouchMove, { passive: false });
         if (touchClone) {
             touchClone.remove();
             touchClone = null;
@@ -167,7 +174,9 @@ export function setupReorder(container, {
             dragEl.classList.remove('dragging');
             dragEl = null;
         }
-        persistOrder();
+        // Persist only when the drag actually moved something: a tap on a
+        // handle must not write ?roomOrder.
+        if (getCurrentOrder().join(',') !== orderAtStart) persistOrder();
     }
 
     /** Attach drag behavior to current items. Call again after DOM rebuild. */
@@ -200,8 +209,8 @@ export function setupReorder(container, {
     container.addEventListener('dragover', onDragOver);
     container.addEventListener('dragend', onDragEnd);
     container.addEventListener('touchstart', onTouchStart, { passive: true });
-    container.addEventListener('touchmove', onTouchMove, { passive: false });
     container.addEventListener('touchend', onTouchEnd);
+    container.addEventListener('touchcancel', onTouchEnd);
 
     bindItems();
 

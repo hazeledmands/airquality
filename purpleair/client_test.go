@@ -13,7 +13,7 @@ const sampleJSON = `{
 	"DateTime":"2026/03/16T21:33:22z",
 	"Geo":"PurpleAir-497",
 	"Mem":5688,"memfrag":57,"memfb":1864,"memcs":96,"Id":21568,
-	"lat":37.841400,"lon":-122.273697,
+	"lat":12.345600,"lon":-65.432100,
 	"Adc":0.02,"loggingrate":15,"place":"outside","version":"7.04",
 	"uptime":2574388,"rssi":-68,"period":120,
 	"httpsuccess":22162,"httpsends":22165,

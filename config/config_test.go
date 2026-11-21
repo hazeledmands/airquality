@@ -26,8 +26,8 @@ func TestLoad_FullFile(t *testing.T) {
 purpleair:
   hosts: [192.168.1.218, 192.168.1.219]
 weather:
-  lat: 37.83
-  lon: -122.28
+  lat: 12.34
+  lon: -65.43
 sensors:
   purpleair/a4:e5:7c:28:49:7:
     room: Downstairs
@@ -42,10 +42,10 @@ sensors:
 	if got := strings.Join(cfg.PurpleAir.Hosts, ","); got != "192.168.1.218,192.168.1.219" {
 		t.Errorf("hosts = %q", got)
 	}
-	if cfg.Weather.Lat == nil || *cfg.Weather.Lat != 37.83 {
+	if cfg.Weather.Lat == nil || *cfg.Weather.Lat != 12.34 {
 		t.Errorf("lat = %v", cfg.Weather.Lat)
 	}
-	if cfg.Weather.Lon == nil || *cfg.Weather.Lon != -122.28 {
+	if cfg.Weather.Lon == nil || *cfg.Weather.Lon != -65.43 {
 		t.Errorf("lon = %v", cfg.Weather.Lon)
 	}
 	s := cfg.Sensors["purpleair/a4:e5:7c:28:49:7"]

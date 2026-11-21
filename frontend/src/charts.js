@@ -1,6 +1,9 @@
-import { CHART_ANIMATION_MS } from './config.js';
+import { CHART_ANIMATION_MS, MUTED_TEXT } from './config.js';
+import { isCompact, compactTick } from './layout.js';
 
 export function xTickCallback(value, index, ticks) {
+    // Phones get one-line labels; two-line labels eat a plot this short.
+    if (isCompact()) return compactTick(ticks, index);
     const dt = luxon.DateTime.fromMillis(ticks[index].value);
     const time = dt.toFormat('h:mm a');
     const first = luxon.DateTime.fromMillis(ticks[0].value);
@@ -21,11 +24,11 @@ export function chartOpts(aspectRatio) {
             x: {
                 type: 'time',
                 time: { tooltipFormat: 'ff' },
-                ticks: { color: '#555', autoSkip: true, maxTicksLimit: 8, maxRotation: 0, callback: xTickCallback, major: { enabled: true } },
+                ticks: { color: MUTED_TEXT, autoSkip: true, maxTicksLimit: 8, maxRotation: 0, callback: xTickCallback, major: { enabled: true } },
                 grid: { color: '#ffffff06' },
             },
             y: {
-                ticks: { color: '#555' },
+                ticks: { color: MUTED_TEXT },
                 grid: { color: '#ffffff06' },
             },
         },

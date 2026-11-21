@@ -22,6 +22,26 @@ export function setAnnotationsEditable(editable) {
 
 // ---- Pure helpers ----
 
+// A click that came from a touch: a PointerEvent with pointerType "touch",
+// or (Safari) the synthetic click that follows a touchend.
+export function isTouchClick(e, lastTouchEnd, now) {
+    return e?.pointerType === 'touch' || now - lastTouchEnd < 800;
+}
+
+let _onSave = null;
+
+// Opens the add-note popover for chart at time tsMs (used by the touch
+// readout's "Add note" button). No-op unless annotations are editable.
+export function promptAddAnnotation(chart, tsMs, screenX, screenY) {
+    if (!_editable || !_onSave) return;
+    const room = chart.options?.plugins?.annotations?.room ?? '';
+    showAddPopover(screenX, screenY, new Date(tsMs).toISOString(), room, _onSave);
+}
+
+export function isAnnotationsEditable() {
+    return _editable;
+}
+
 // Returns annotations whose timestamp falls within [fromMs, toMs).
 export function filterAnnotations(annotations, fromMs, toMs) {
     return annotations.filter(a => {
@@ -268,6 +288,7 @@ function showInfoPopover(screenX, screenY, annotation, onDelete) {
 // Call this after building the chart DOM. `callbacks` is `{ onSave, onDelete }`.
 // Returns a cleanup function — call it before rebuilding the DOM to remove all listeners.
 export function setupAnnotationUI(charts, { onSave, onDelete }) {
+    _onSave = onSave;
     const tooltip = getTooltip();
 
     // Close popover on outside click
@@ -287,8 +308,11 @@ export function setupAnnotationUI(charts, { onSave, onDelete }) {
         const canvas = chart.canvas;
         if (!canvas) continue;
 
+        let lastTouchEnd = -Infinity;
+        canvas.addEventListener('touchend', () => { lastTouchEnd = performance.now(); }, { passive: true });
         const onClick = (e) => {
             if (!chart.scales.x) return;
+            const touch = isTouchClick(e, lastTouchEnd, performance.now());
             const rect = canvas.getBoundingClientRect();
             const x = e.clientX - rect.left;
             const { chartArea } = chart;
@@ -299,7 +323,9 @@ export function setupAnnotationUI(charts, { onSave, onDelete }) {
             const ann = findAnnotationAtPixel(chart, x, visible);
             if (ann) {
                 showInfoPopover(e.clientX, e.clientY, ann, _editable ? onDelete : null);
-            } else if (_editable) {
+            } else if (_editable && !touch) {
+                // On touch, a tap shows the readout; notes are added from
+                // its "Add note" button instead.
                 const tsMs = chart.scales.x.getValueForPixel(x);
                 showAddPopover(e.clientX, e.clientY, new Date(tsMs).toISOString(), chartRoom, onSave);
             }

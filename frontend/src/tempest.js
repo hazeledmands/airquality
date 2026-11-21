@@ -150,7 +150,9 @@ export function tempestAsWeather(obs) {
 const v = (text) => `<span class="value">${text}</span>`;
 const STALE_MS = 5 * 60_000;
 
-// HTML for the strip above the Tempest charts. latest is the newest raw
+// HTML for the strip above the Tempest charts. Spans beyond the key values
+// (temperature, humidity, wind, rain today) carry class "secondary", which
+// phones hide until the strip is expanded. latest is the newest raw
 // observation (never a downsampled bucket); obs are the chart rows, used only
 // for the 3-hour pressure trend and strike count.
 export function formatTempestLatest(latest, obs = [], events = [], nowMs = Date.now()) {
@@ -163,7 +165,7 @@ export function formatTempestLatest(latest, obs = [], events = [], nowMs = Date.
     }
     if (latest.air_temp_c != null) parts.push(`<span>${v(cToF(latest.air_temp_c).toFixed(1) + '°F')}</span>`);
     if (latest.relative_humidity != null) parts.push(`<span>${v(latest.relative_humidity.toFixed(0) + '%')} humidity</span>`);
-    if (latest.dewpoint_c != null) parts.push(`<span>${v(cToF(latest.dewpoint_c).toFixed(1) + '°F')} dew point</span>`);
+    if (latest.dewpoint_c != null) parts.push(`<span class="secondary">${v(cToF(latest.dewpoint_c).toFixed(1) + '°F')} dew point</span>`);
 
     if (latest.wind_avg_ms != null) {
         const dir = latest.wind_avg_ms > 0 ? ' ' + cardinal(latest.wind_direction_deg) : '';
@@ -175,24 +177,24 @@ export function formatTempestLatest(latest, obs = [], events = [], nowMs = Date.
     if (today) parts.push(`<span>${v(mmToIn(today.mm).toFixed(2) + ' in')} rain today${today.checked ? ' (Rain Check)' : ''}</span>`);
     if (latest.rain_mm > 0) {
         const rate = mmToIn(latest.rain_mm) * 60 / (latest.report_interval_min || 1);
-        parts.push(`<span>${v(rate.toFixed(2))} in/h now</span>`);
+        parts.push(`<span class="secondary">${v(rate.toFixed(2))} in/h now</span>`);
     }
 
-    if (latest.uv_index != null) parts.push(`<span>UV ${v(latest.uv_index.toFixed(1))}</span>`);
-    if (latest.solar_radiation_wm2 != null) parts.push(`<span>${v(Math.round(latest.solar_radiation_wm2))} W/m²</span>`);
-    if (latest.illuminance_lux != null) parts.push(`<span>${v(Math.round(latest.illuminance_lux).toLocaleString('en-US'))} lux</span>`);
+    if (latest.uv_index != null) parts.push(`<span class="secondary">UV ${v(latest.uv_index.toFixed(1))}</span>`);
+    if (latest.solar_radiation_wm2 != null) parts.push(`<span class="secondary">${v(Math.round(latest.solar_radiation_wm2))} W/m²</span>`);
+    if (latest.illuminance_lux != null) parts.push(`<span class="secondary">${v(Math.round(latest.illuminance_lux).toLocaleString('en-US'))} lux</span>`);
 
     const ls = lightningSummary(obs, events);
     if (ls.count3h > 0) {
         const dist = ls.lastDistanceKm != null ? `, last ${v(kmToMi(ls.lastDistanceKm).toFixed(0))} mi away` : '';
-        parts.push(`<span>${v(ls.count3h)} strike${ls.count3h === 1 ? '' : 's'} in 3 h${dist}</span>`);
+        parts.push(`<span class="secondary">${v(ls.count3h)} strike${ls.count3h === 1 ? '' : 's'} in 3 h${dist}</span>`);
     }
 
     if (latest.sea_level_pressure_mb != null) {
         const trend = pressureTrend(obs);
         const tr = trend ? ` ${trend.label} (${trend.delta >= 0 ? '+' : ''}${hpaToInHg(trend.delta).toFixed(2)} in 3 h)` : '';
-        parts.push(`<span>${v(hpaToInHg(latest.sea_level_pressure_mb).toFixed(2))} inHg${tr}</span>`);
+        parts.push(`<span class="secondary">${v(hpaToInHg(latest.sea_level_pressure_mb).toFixed(2))} inHg${tr}</span>`);
     }
-    if (latest.battery_v != null) parts.push(`<span>battery ${v(latest.battery_v.toFixed(2) + ' V')}</span>`);
+    if (latest.battery_v != null) parts.push(`<span class="secondary">battery ${v(latest.battery_v.toFixed(2) + ' V')}</span>`);
     return parts.join('');
 }

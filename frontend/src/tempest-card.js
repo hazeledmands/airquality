@@ -1,10 +1,12 @@
 // The Tempest section: a latest-values strip over small multiples (outdoor,
 // wind, direction, rain, sun, lightning, station) that share the dashboard's
 // time axis.
-import { CHART_ANIMATION_MS, pinAxisWidth } from './config.js';
+import { CHART_ANIMATION_MS, pinAxisWidth, MUTED_TEXT } from './config.js';
 import { xTickCallback } from './charts.js';
 import { METRIC_COLORS } from './room-charts.js';
-import { createDragHandle } from './chart-card.js';
+import { createDragHandle, createChartBox, sizeChartBox } from './chart-card.js';
+import { isCompact, sizeOptions, sizingFor } from './layout.js';
+import { renderKeyRow } from './key-row.js';
 import { getParam, setParam } from './url-state.js';
 import {
     tempestPanelIds, tempestSeries, tempestEventPoints, formatTempestLatest, cardinal,
@@ -33,6 +35,7 @@ const LABELS = {
     wind: 'Wind · mph',
     direction: 'Wind direction · where it blows from',
     rain: 'Rain · in/h (area: bucket average, line: wettest minute), in since local midnight',
+    rainShort: 'Rain · in/h, in today',
     sun: 'Sun · UV index, W/m²',
     lightning: 'Lightning · distance in miles',
     station: 'Station · sea-level pressure inHg, battery V',
@@ -73,19 +76,25 @@ function legendClick(_e, item, legend) {
     chart.update();
 }
 
-export function tempestPanelOpts(panel, ar) {
+// Size class of a panel: the outdoor chart matches the room charts, the
+// direction strip is a fixed-height strip, the rest are shorter panels.
+export function panelKind(panel) {
+    if (panel === 'outdoor') return 'main';
+    if (panel === 'direction') return 'direction';
+    return 'secondary';
+}
+
+export function tempestPanelOpts(panel, ar, compact = isCompact()) {
     const scales = {
         x: {
             type: 'time',
             time: { tooltipFormat: 'ff' },
-            ticks: { color: '#555', autoSkip: true, maxTicksLimit: 8, maxRotation: 0, callback: xTickCallback, major: { enabled: true } },
+            ticks: { color: MUTED_TEXT, autoSkip: true, maxTicksLimit: 8, maxRotation: 0, callback: xTickCallback, major: { enabled: true } },
             grid: { color: '#ffffff06' },
         },
     };
-    let aspect = secondaryAspect(ar);
     switch (panel) {
     case 'outdoor':
-        aspect = ar;
         scales.y = axis('left', '°F');
         scales.y1 = axis('right', '%', { min: 0, max: 100 });
         break;
@@ -97,9 +106,8 @@ export function tempestPanelOpts(panel, ar) {
         // A thin strip: direction needs a compass axis, not the speed axis.
         // The wind panel right above labels the shared time axis, so the
         // strip hides its own time labels and gives the height to the plot.
-        // Tall enough for all five compass labels: on a phone that is
-        // about 90 px, on desktop about 100.
-        aspect = ar >= 4 ? secondaryAspect(ar) * 1.8 : ar * 1.6;
+        // Its height is fixed in pixels at every width (CHART_HEIGHTS), tall
+        // enough for all five compass labels.
         scales.x.ticks = { ...scales.x.ticks, display: false };
         // Degrees increase upward (N at the bottom, E, S, W, N at the top).
         // The ticks are pinned: with a step size Chart.js would label only
@@ -107,7 +115,7 @@ export function tempestPanelOpts(panel, ar) {
         // westerly look alike.
         scales.yDir = axis('left', '', {
             min: 0, max: 360,
-            ticks: { color: '#666', autoSkip: false, font: { size: 10 }, callback: (val) => DIRS[val] ?? '' },
+            ticks: { color: MUTED_TEXT, autoSkip: false, font: { size: 10 }, callback: (val) => DIRS[val] ?? '' },
             afterBuildTicks: (scale) => { scale.ticks = [0, 90, 180, 270, 360].map(value => ({ value })); },
         });
         scales.yDirR = axis('right', '', { display: true, ticks: { display: false }, grid: { drawOnChartArea: false } });
@@ -131,19 +139,19 @@ export function tempestPanelOpts(panel, ar) {
         break;
     }
     const nearest = panel === 'lightning' || panel === 'rain';
-    return {
+    const opts = {
         responsive: true,
-        maintainAspectRatio: true,
-        aspectRatio: aspect,
         animation: { duration: CHART_ANIMATION_MS },
         interaction: nearest ? { mode: 'nearest', axis: 'x', intersect: false } : { mode: 'index', intersect: false },
         scales,
         plugins: {
             legend: {
                 display: panel !== 'direction',
+                // The direction strip has one dataset: no legend at any width.
+                keyRow: panel === 'direction' ? false : undefined,
                 position: 'bottom',
                 onClick: legendClick,
-                labels: { color: '#555', boxWidth: 16, boxHeight: 1, padding: 10, font: { size: 10 } },
+                labels: { color: MUTED_TEXT, boxWidth: 16, boxHeight: 1, padding: 10, font: { size: 10 } },
             },
             tooltip: {
                 backgroundColor: '#1e1e30', titleColor: '#ccc', bodyColor: '#aaa', borderColor: '#333', borderWidth: 1,
@@ -156,6 +164,7 @@ export function tempestPanelOpts(panel, ar) {
             line: { borderWidth: 1.5, tension: 0 },
         },
     };
+    return sizeOptions(opts, panelKind(panel), compact, ar);
 }
 
 export function tooltipLabel(item) {
@@ -281,13 +290,23 @@ export function buildTempestSection(station, ar) {
         card.dataset.panel = panel;
         const label = document.createElement('div');
         label.className = 'panel-label';
-        label.textContent = LABELS[panel];
+        if (panel === 'rain') {
+            // Phones show the short title (CSS picks one).
+            label.innerHTML = `<span class="label-full"></span><span class="label-short"></span>`;
+            label.querySelector('.label-full').textContent = LABELS.rain;
+            label.querySelector('.label-short').textContent = LABELS.rainShort;
+        } else {
+            label.textContent = LABELS[panel];
+        }
         card.appendChild(label);
-        const canvas = document.createElement('canvas');
-        card.appendChild(canvas);
+        const kind = panelKind(panel);
+        const { box, canvas, keyRow } = createChartBox(kind);
+        sizeChartBox(box, sizingFor(kind, isCompact(), ar).height);
+        card.appendChild(box);
+        card.appendChild(keyRow);
         section.appendChild(card);
         const chart = new Chart(canvas, { type: 'line', data: { datasets: [] }, options: tempestPanelOpts(panel, ar) });
-        panels.push({ room: id, chart, secondary: panel !== 'outdoor', card, label });
+        panels.push({ room: id, chart, kind, box, keyRow, card, label });
     }
     return { section, panels };
 }
@@ -305,6 +324,9 @@ export function updateTempestSection(panels, tempest, stepMs) {
         const datasets = buildTempestDatasets(panel, series, ev);
         for (const d of datasets) d.hidden = hidden.has(d.key);
         p.chart.data.datasets = datasets;
+        // Panels keep the same datasets, so the key row can be drawn before
+        // the caller's update(); rooms.js redraws it after update() too.
+        if (p.keyRow) renderKeyRow(p.keyRow, p.chart);
         if (panel === 'lightning' && p.card) {
             const none = series.strikes.length === 0 && ev.strikes.length === 0;
             p.card.classList.toggle('collapsed', none);
@@ -312,5 +334,22 @@ export function updateTempestSection(panels, tempest, stepMs) {
         }
     }
     const strip = document.getElementById('tempest-current');
-    if (strip) strip.innerHTML = formatTempestLatest(tempest?.latest, obs, events);
+    if (strip) {
+        strip.innerHTML = formatTempestLatest(tempest?.latest, obs, events);
+        // Phones show the key values; this reveals the rest. The state is
+        // transient (not in the URL) but survives the minute refresh.
+        if (strip.querySelector('.secondary')) {
+            const more = document.createElement('button');
+            more.type = 'button';
+            more.className = 'strip-more';
+            const sync = () => {
+                const open = strip.classList.contains('expanded');
+                more.textContent = open ? 'less' : 'more';
+                more.setAttribute('aria-expanded', String(open));
+            };
+            more.addEventListener('click', () => { strip.classList.toggle('expanded'); sync(); });
+            sync();
+            strip.appendChild(more);
+        }
+    }
 }

@@ -8,8 +8,8 @@ import (
 )
 
 const sampleResponse = `{
-	"latitude": 37.818,
-	"longitude": -122.290,
+	"latitude": 12.345,
+	"longitude": -65.432,
 	"timezone": "America/Los_Angeles",
 	"current": {
 		"time": "2026-03-22T12:45",
@@ -43,7 +43,7 @@ func TestFetch(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := NewClient(37.831, -122.285)
+	c := NewClient(12.345, -65.432)
 	c.baseURL = srv.URL
 
 	reading, err := c.Fetch(t.Context())
@@ -75,11 +75,11 @@ func TestFetch(t *testing.T) {
 	if reading.UVIndex != 6.25 {
 		t.Errorf("UVIndex = %v, want 6.25", reading.UVIndex)
 	}
-	if reading.Latitude != 37.831 {
-		t.Errorf("Latitude = %v, want 37.831", reading.Latitude)
+	if reading.Latitude != 12.345 {
+		t.Errorf("Latitude = %v, want 12.345", reading.Latitude)
 	}
-	if reading.Longitude != -122.285 {
-		t.Errorf("Longitude = %v, want -122.285", reading.Longitude)
+	if reading.Longitude != -65.432 {
+		t.Errorf("Longitude = %v, want -65.432", reading.Longitude)
 	}
 
 	// Sunrise/sunset parsed correctly
@@ -120,7 +120,7 @@ func TestFetch_EmptyDaily(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := NewClient(37.831, -122.285)
+	c := NewClient(12.345, -65.432)
 	c.baseURL = srv.URL
 
 	reading, err := c.Fetch(t.Context())

@@ -166,14 +166,7 @@ func main() {
 
 	go func() {
 		addr := fmt.Sprintf(":%d", cfg.port)
-		mux := http.NewServeMux()
-		mux.Handle("/metrics", m.Handler())
-		mux.HandleFunc("/api/data", dataHandler(cache, fileCfg))
-		mux.HandleFunc("GET /api/me", authn.meHandler())
-		mux.HandleFunc("GET /login", loginHandler())
-		mux.HandleFunc("POST /api/annotations", authn.requireUser(annotationsWriteHandler(db, cache)))
-		mux.HandleFunc("DELETE /api/annotations/{id}", authn.requireUser(annotationsDeleteHandler(db, cache)))
-		mux.HandleFunc("/", roomsHandler())
+		mux := routes(m, cache, fileCfg, authn, db)
 		log.Printf("Dashboard at http://0.0.0.0:%d/ (accessible from any machine on the network)", cfg.port)
 		log.Printf("Prometheus metrics at http://0.0.0.0:%d/metrics", cfg.port)
 		if err := http.ListenAndServe(addr, mux); err != nil {
@@ -434,4 +427,18 @@ func resolveWeatherClient(latEnv, lonEnv string, file config.Config) *openmeteo.
 		return openmeteo.NewClient(*file.Weather.Lat, *file.Weather.Lon)
 	}
 	return nil
+}
+
+// routes is the HTTP surface. The dashboard page and its data are gzipped
+// (nothing in front of the app compresses); /metrics compresses itself.
+func routes(m *metrics.Metrics, cache *dataCache, fileCfg config.Config, authn authConfig, db *store.Store) http.Handler {
+	mux := http.NewServeMux()
+	mux.Handle("/metrics", m.Handler())
+	mux.Handle("/api/data", withGzip(dataHandler(cache, fileCfg)))
+	mux.HandleFunc("GET /api/me", authn.meHandler())
+	mux.HandleFunc("GET /login", loginHandler())
+	mux.HandleFunc("POST /api/annotations", authn.requireUser(annotationsWriteHandler(db, cache)))
+	mux.HandleFunc("DELETE /api/annotations/{id}", authn.requireUser(annotationsDeleteHandler(db, cache)))
+	mux.Handle("/", withGzip(roomsHandler()))
+	return mux
 }

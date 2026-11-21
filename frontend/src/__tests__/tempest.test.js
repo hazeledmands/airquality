@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 import { describe, it, expect } from 'vitest';
 import {
     msToMph, mmToIn, kmToMi, cardinal, tempestSeries, pressureTrend, rainToday,
@@ -229,5 +230,26 @@ describe('hpaToInHg', () => {
 describe('tempestPanelIds', () => {
     it('lists one chart id per panel', () => {
         expect(tempestPanelIds()).toEqual(['__tempest__/outdoor', '__tempest__/wind', '__tempest__/direction', '__tempest__/rain', '__tempest__/sun', '__tempest__/lightning', '__tempest__/station']);
+    });
+});
+
+// Phones show the key values and hide the rest behind an expand control.
+describe('formatTempestLatest on phones', () => {
+    const latest = {
+        device_id: 1, timestamp: new Date(T0).toISOString(), air_temp_c: 20, relative_humidity: 50, dewpoint_c: 9, wind_avg_ms: 2, wind_gust_ms: 5,
+        wind_direction_deg: 270, local_day_rain_mm: 2.54, rain_mm: 0, uv_index: 3, solar_radiation_wm2: 400, illuminance_lux: 50000,
+        sea_level_pressure_mb: 1013, battery_v: 2.6, report_interval_min: 1,
+    };
+    it('marks everything except temperature, humidity, wind and rain today as secondary', () => {
+        const el = document.createElement('div');
+        el.innerHTML = formatTempestLatest(latest, [latest], [], T0);
+        const key = [...el.querySelectorAll(':scope > span:not(.secondary)')].map(s => s.textContent);
+        expect(key).toHaveLength(4);
+        expect(key[0]).toContain('°F');
+        expect(key[1]).toContain('humidity');
+        expect(key[2]).toContain('wind');
+        expect(key[3]).toContain('rain today');
+        const secondary = [...el.querySelectorAll('.secondary')].map(s => s.textContent).join(' ');
+        for (const s of ['dew point', 'UV', 'W/m²', 'lux', 'inHg', 'battery']) expect(secondary).toContain(s);
     });
 });

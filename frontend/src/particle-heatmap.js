@@ -10,6 +10,14 @@ const WEEK_MS = 7 * DAY_MS;
 
 export const TOTAL_H = PARTICLE_BINS.length * (ROW_H + GAP);
 
+// The bin's range label, without the unit when the full label would run past
+// the left edge of the label column.
+function rowLabel(ctx, bin) {
+    const fits = (s) => !ctx.measureText || ctx.measureText(s).width <= LABEL_W - 3;
+    if (fits(bin.rangeLabel)) return bin.rangeLabel;
+    return bin.rangeLabel.replace('\u00b5m', '');
+}
+
 export function renderHeatmap(canvas, particles, xRange, crosshairT = null, dragState = null, stepMs = 0) {
     const dpr = (typeof window !== 'undefined' && window.devicePixelRatio) || 1;
     const cssW = canvas.offsetWidth || 600;
@@ -40,7 +48,7 @@ export function renderHeatmap(canvas, particles, xRange, crosshairT = null, drag
         ctx.font = '9px monospace';
         ctx.textAlign = 'right';
         ctx.textBaseline = 'middle';
-        ctx.fillText(bin.rangeLabel, LABEL_W - 3, y + ROW_H / 2);
+        ctx.fillText(rowLabel(ctx, bin), LABEL_W - 3, y + ROW_H / 2);
 
         if (allPoints.length === 0) return;
         if (!stepMs && allPoints.length < 2) return;

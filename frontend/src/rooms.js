@@ -1,21 +1,24 @@
 import { REFRESH_MS, cToF, filterByRange, buildRoomDatasets, computeStatus, getAspectRatio, makeWeatherTempSeries, makeUVSeries, extractDaylightPairs, applyNewAnnotation, removeAnnotation } from './data.js';
-import { CHART_ANIMATION_MS, Y_AXIS_PADDING, pinAxisWidth } from './config.js';
+import { CHART_ANIMATION_MS, Y_AXIS_PADDING, pinAxisWidth, MUTED_TEXT } from './config.js';
 import { xTickCallback } from './charts.js';
 import { combinedChartOpts, buildCombinedDatasets, PARTICLE_BINS, formatLatestValues } from './room-charts.js';
 import { renderHeatmap, setupHeatmapInteraction } from './particle-heatmap.js';
-import { crosshairPlugin, registerChart, unregisterChart, getHoverTimestamp } from './crosshair.js';
+import { crosshairPlugin, registerChart, unregisterChart, getHoverTimestamp, setCrosshairTimestamp } from './crosshair.js';
 import { dragZoomPlugin, registerChart as registerZoomChart, unregisterChart as unregisterZoomChart, setZoomCallback, getDragState } from './drag-zoom.js';
 import { maximaLabelsPlugin, setMaximaLabelsEnabled } from './maxima-labels.js';
 import { humidityHighlightPlugin, setHumidityHighlightEnabled } from './humidity-highlight.js';
 import { daylightPlugin, setDaylightPairs } from './daylight-plugin.js';
 import { setupTimeRangePicker } from './time-range-picker.js';
-import { createDragHandle } from './chart-card.js';
+import { createDragHandle, createChartBox, sizeChartBox } from './chart-card.js';
+import { isCompact, sizeOptions, sizingFor, zoomRange, resizeGate, roundTick, niceRange } from './layout.js';
+import { renderKeyRow } from './key-row.js';
+import { readoutFor, createGesture } from './readout.js';
 import { setupReorder } from './reorder.js';
 import { computeXRange, syncXAxes, computeYRange, syncYAxes } from './axis-sync.js';
-import { annotationsPlugin, setAnnotations, setupAnnotationUI, setAnnotationsEditable } from './annotations.js';
+import { annotationsPlugin, setAnnotations, setupAnnotationUI, setAnnotationsEditable, promptAddAnnotation, isAnnotationsEditable } from './annotations.js';
 import { fetchAuth, loginUrl } from './auth.js';
 import { getParam, setParam } from './url-state.js';
-import { buildTempestSection, updateTempestSection, secondaryAspect, buildEmptyTempestSection } from './tempest-card.js';
+import { buildTempestSection, updateTempestSection, buildEmptyTempestSection } from './tempest-card.js';
 import { tempestAsWeather, tempestPanelIds } from './tempest.js';
 
 Chart.register(crosshairPlugin);
@@ -27,7 +30,7 @@ Chart.register(annotationsPlugin);
 
 let allData = null;
 let currentStepSize = 0;
-let roomCharts = []; // { room, chart }
+let roomCharts = []; // { room, chart, kind, box, keyRow, ... }
 let cleanupAnnotationUI = null;
 let reorder = null;
 let outdoorTempEnabled = false;
@@ -38,24 +41,22 @@ let skipAnimation = false; // set true before zoom-triggered updateCharts to avo
 
 
 function weatherChartOpts(ar) {
-    return {
+    const opts = {
         responsive: true,
-        maintainAspectRatio: true,
-        aspectRatio: ar,
         animation: { duration: CHART_ANIMATION_MS },
         interaction: { mode: 'index', intersect: false },
         scales: {
             x: {
                 type: 'time',
                 time: { tooltipFormat: 'ff' },
-                ticks: { color: '#555', autoSkip: true, maxTicksLimit: 8, maxRotation: 0, callback: xTickCallback, major: { enabled: true } },
+                ticks: { color: MUTED_TEXT, autoSkip: true, maxTicksLimit: 8, maxRotation: 0, callback: xTickCallback, major: { enabled: true } },
                 grid: { color: '#ffffff06' },
             },
             y: {
                 type: 'linear',
                 position: 'left',
                 title: { display: true, text: '\u00B0F', color: '#888', font: { size: 11 } },
-                ticks: { color: '#888' },
+                ticks: { color: '#888', callback: roundTick },
                 grid: { color: '#ffffff06' },
                 afterFit: pinAxisWidth,
             },
@@ -70,7 +71,7 @@ function weatherChartOpts(ar) {
             },
         },
         plugins: {
-            legend: { position: 'bottom', labels: { color: '#555', boxWidth: 16, boxHeight: 1, padding: 10, font: { size: 10 } } },
+            legend: { position: 'bottom', labels: { color: MUTED_TEXT, boxWidth: 16, boxHeight: 1, padding: 10, font: { size: 10 } } },
             tooltip: { backgroundColor: '#1e1e30', titleColor: '#ccc', bodyColor: '#aaa', borderColor: '#333', borderWidth: 1 },
             humidityHighlight: { enabled: false },
         },
@@ -79,6 +80,14 @@ function weatherChartOpts(ar) {
             line: { borderWidth: 2, tension: 0 },
         },
     };
+    return sizeOptions(opts, 'main', isCompact(), ar);
+}
+
+// The chart box and key row for a 'main' chart, sized for this screen.
+function mainChartBox(ar) {
+    const parts = createChartBox('main');
+    sizeChartBox(parts.box, sizingFor('main', isCompact(), ar).height);
+    return parts;
 }
 
 function buildWeatherCard(weather, ar) {
@@ -89,10 +98,8 @@ function buildWeatherCard(weather, ar) {
     const heading = document.createElement('h2');
     heading.style.color = '#94a3b8';
     heading.appendChild(createDragHandle());
-    const lat = weather[0]?.latitude?.toFixed(4) ?? '';
-    const lon = weather[0]?.longitude?.toFixed(4) ?? '';
-    const title = lat && lon ? `Open-Meteo (${lat}, ${lon})` : 'Open-Meteo';
-    heading.appendChild(document.createTextNode(title));
+    // No coordinates: the page is public.
+    heading.appendChild(document.createTextNode('Open-Meteo'));
     section.appendChild(heading);
 
     const strip = document.createElement('div');
@@ -102,8 +109,9 @@ function buildWeatherCard(weather, ar) {
 
     const card = document.createElement('div');
     card.className = 'chart-card';
-    const canvas = document.createElement('canvas');
-    card.appendChild(canvas);
+    const { box, canvas, keyRow } = mainChartBox(ar);
+    card.appendChild(box);
+    card.appendChild(keyRow);
     section.appendChild(card);
 
     const chart = new Chart(canvas, {
@@ -114,7 +122,8 @@ function buildWeatherCard(weather, ar) {
 
     registerChart(chart);
     registerZoomChart(chart);
-    roomCharts.push({ room: '__weather__', chart });
+    attachTouchReadout(chart);
+    roomCharts.push({ room: '__weather__', chart, kind: 'main', box, keyRow });
     return section;
 }
 
@@ -130,7 +139,8 @@ function updateWeatherCard(weather) {
             `<span><span class="value">${latest.humidity.toFixed(0)}%</span> humidity</span>`,
         ];
         if (latest.wind_speed_kmh) {
-            parts.push(`<span><span class="value">${latest.wind_speed_kmh.toFixed(1)}</span> km/h wind</span>`);
+            // mph, like the Tempest.
+            parts.push(`<span><span class="value">${(latest.wind_speed_kmh / 1.609344).toFixed(1)}</span> mph wind</span>`);
         }
         if (latest.precipitation_mm) {
             parts.push(`<span><span class="value">${latest.precipitation_mm.toFixed(1)}</span> mm precip</span>`);
@@ -171,6 +181,7 @@ function buildRoomDOM(rooms) {
         for (const p of panels) {
             registerChart(p.chart);
             registerZoomChart(p.chart);
+            attachTouchReadout(p.chart);
             roomCharts.push(p);
         }
     }
@@ -193,11 +204,12 @@ function buildRoomDOM(rooms) {
 
         const card = document.createElement('div');
         card.className = 'chart-card';
-        const canvas = document.createElement('canvas');
-        card.appendChild(canvas);
+        const { box, canvas, keyRow } = mainChartBox(ar);
+        card.appendChild(box);
+        card.appendChild(keyRow);
         section.appendChild(card);
 
-        const opts = combinedChartOpts(ar, room);
+        const opts = sizeOptions(combinedChartOpts(ar, room), 'main', isCompact(), ar);
         opts.plugins.annotations = { room: room.name };
         const chart = new Chart(canvas, {
             type: 'line',
@@ -207,6 +219,7 @@ function buildRoomDOM(rooms) {
 
         registerChart(chart);
         registerZoomChart(chart);
+        attachTouchReadout(chart);
 
         let heatmapCanvas = null;
         const hasParticles = PARTICLE_BINS.some(b => (room.particles?.[b.field]?.length ?? 0) > 0);
@@ -217,7 +230,7 @@ function buildRoomDOM(rooms) {
         }
 
         container.appendChild(section);
-        roomCharts.push({ room: room.name, chart, heatmapCanvas, roomData: null });
+        roomCharts.push({ room: room.name, chart, kind: 'main', box, keyRow, heatmapCanvas, roomData: null });
 
         if (heatmapCanvas) {
             const rc = roomCharts[roomCharts.length - 1];
@@ -301,8 +314,10 @@ function updateCharts(data) {
     const allCharts = roomCharts.map(rc => rc.chart);
     const xRange = computeXRange(allCharts);
     syncXAxes(allCharts, xRange);
-    syncYAxes(allCharts, 'y',  computeYRange(allCharts, 'y',  Y_AXIS_PADDING));
-    syncYAxes(allCharts, 'y2', computeYRange(allCharts, 'y2', Y_AXIS_PADDING));
+    // Shared y ranges, rounded outward to whole 5s so the end labels are
+    // round numbers. PM2.5 can't be negative.
+    syncYAxes(allCharts, 'y',  niceRange(computeYRange(allCharts, 'y',  Y_AXIS_PADDING), 5));
+    syncYAxes(allCharts, 'y2', niceRange(computeYRange(allCharts, 'y2', Y_AXIS_PADDING), 5, 0));
     // UV appears on both the Open-Meteo and Tempest charts; keep one scale.
     const uvRange = computeYRange(allCharts, 'yUV', 0);
     if (uvRange) syncYAxes(allCharts, 'yUV', { min: 0, max: Math.max(uvRange.max, 3) });
@@ -310,6 +325,9 @@ function updateCharts(data) {
     skipAnimation = false;
     for (const rc of roomCharts) {
         rc.chart.update(updateMode);
+        // After update(): Chart.js builds legend items from dataset metadata,
+        // which is stale until the chart has seen the new datasets.
+        if (rc.keyRow) renderKeyRow(rc.keyRow, rc.chart);
         if (rc.heatmapCanvas && rc.roomData?.particles && xRange) {
             renderHeatmap(rc.heatmapCanvas, rc.roomData.particles, xRange, getHoverTimestamp(), getDragState(), currentStepSize);
         }
@@ -322,19 +340,148 @@ function updateCharts(data) {
         computeStatus(sensors, acStates) + tempestStatus + ` \u00B7 updated ${new Date().toLocaleTimeString()}`;
 }
 
-window.addEventListener('resize', () => {
+// Re-size for a new width (rotation, window resize). Debounced, skipped for
+// height-only changes (the iOS address bar), and not animated: animating a
+// dozen charts on every resize cost three ~170 ms long tasks.
+window.addEventListener('resize', resizeGate(() => {
     const ar = getAspectRatio(window.innerWidth);
+    const compact = isCompact();
     for (const rc of roomCharts) {
-        rc.chart.options.aspectRatio = rc.secondary ? secondaryAspect(ar) : ar;
-        rc.chart.update();
+        const kind = rc.kind || 'main';
+        sizeOptions(rc.chart.options, kind, compact, ar);
+        if (rc.box) sizeChartBox(rc.box, sizingFor(kind, compact, ar).height);
+        rc.chart.update('none');
+        if (rc.keyRow) renderKeyRow(rc.keyRow, rc.chart);
         if (rc.heatmapCanvas && rc.roomData?.particles) {
             const xRange = { min: rc.chart.options.scales.x.min, max: rc.chart.options.scales.x.max };
             renderHeatmap(rc.heatmapCanvas, rc.roomData.particles, xRange, getHoverTimestamp(), getDragState(), currentStepSize);
         }
     }
+}));
+
+// --- Touch readout (phones) -------------------------------------------------
+// A tap, press-and-hold or tap-then-drag on any chart moves the synced
+// crosshair and shows that chart's values in one readout pinned under the
+// header. A tap elsewhere or a scroll dismisses it. Mouse behaviour is
+// unchanged. The readout is transient, so it is not kept in the URL.
+const readoutEl = document.getElementById('readout');
+let scrubbing = false;
+
+function chartTitle(chart) {
+    const section = chart.canvas.closest('.room-section');
+    const panel = chart.canvas.closest('.tempest-panel')?.querySelector('.panel-label .label-short, .panel-label')?.textContent;
+    const name = section?.querySelector('h2')?.textContent.replace('\u2630', '').trim() || '';
+    return panel ? `${name} \u00B7 ${panel.split(' \u00B7 ')[0]}` : name;
+}
+
+function escapeHtml(s) {
+    return String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+}
+
+function showReadout(chart, t) {
+    if (t == null || !Number.isFinite(t)) return;
+    setCrosshairTimestamp(t, chart.id);
+    const r = readoutFor(chart, t);
+    readoutEl.innerHTML = `<div class="readout-title">${escapeHtml(chartTitle(chart))} \u00B7 ${escapeHtml(r.title)}</div>`
+        + r.lines.map(l => `<span class="readout-item"><i style="background:${escapeHtml(l.color || '#888')}"></i>${escapeHtml(l.text)}</span>`).join('');
+    if (isAnnotationsEditable()) {
+        const add = document.createElement('button');
+        add.type = 'button';
+        add.className = 'readout-add';
+        add.textContent = 'Add note here';
+        add.addEventListener('click', () => {
+            const rect = readoutEl.getBoundingClientRect();
+            hideReadout();
+            promptAddAnnotation(chart, t, window.innerWidth / 2, rect.bottom + 8);
+        });
+        readoutEl.appendChild(add);
+    }
+    readoutEl.hidden = false;
+}
+
+function hideReadout() {
+    if (readoutEl.hidden) return;
+    readoutEl.hidden = true;
+    setCrosshairTimestamp(null, null);
+}
+
+function attachTouchReadout(chart) {
+    const canvas = chart.canvas;
+    const gesture = createGesture();
+    let timer = null;
+    const timeAt = (touch) => {
+        const rect = canvas.getBoundingClientRect();
+        const { left, right } = chart.chartArea || { left: 0, right: rect.width };
+        const x = Math.min(Math.max(touch.clientX - rect.left, left), right);
+        return chart.scales.x?.getValueForPixel(x);
+    };
+    // Passive throughout: canvases are touch-action: pan-y, so vertical
+    // swipes scroll natively and horizontal moves reach these handlers.
+    canvas.addEventListener('touchstart', (e) => {
+        if (e.touches.length !== 1) return;
+        const touch = e.touches[0];
+        gesture.start(touch.clientX, touch.clientY, e.timeStamp);
+        clearTimeout(timer);
+        timer = setTimeout(() => {
+            if (gesture.longPress()) { scrubbing = true; showReadout(chart, timeAt(touch)); }
+        }, 350);
+    }, { passive: true });
+    canvas.addEventListener('touchmove', (e) => {
+        const touch = e.touches[0];
+        const state = gesture.move(touch.clientX, touch.clientY);
+        if (state === 'scroll') clearTimeout(timer);
+        if (state === 'scrub') { scrubbing = true; showReadout(chart, timeAt(touch)); }
+    }, { passive: true });
+    const end = (e) => {
+        clearTimeout(timer);
+        const touch = e.changedTouches[0];
+        const result = gesture.end(e.timeStamp);
+        scrubbing = false;
+        if (result === 'tap' && touch) showReadout(chart, timeAt(touch));
+    };
+    canvas.addEventListener('touchend', end, { passive: true });
+    canvas.addEventListener('touchcancel', end, { passive: true });
+}
+
+document.addEventListener('touchstart', (e) => {
+    if (!e.target.closest?.('.chart-box canvas, #readout')) hideReadout();
+}, { passive: true });
+window.addEventListener('scroll', () => { if (!scrubbing) hideReadout(); }, { passive: true });
+
+// --- Header -------------------------------------------------------------------
+// The header is sticky, so nothing is hidden under it; its measured height
+// positions the readout just below it.
+const header = document.querySelector('.date-range');
+new ResizeObserver(() => {
+    document.documentElement.style.setProperty('--header-h', `${header.getBoundingClientRect().height}px`);
+}).observe(header);
+
+// Phones: the toggles live in a sheet behind the "more" button. Whether the
+// sheet is open is transient, so it is not kept in the URL.
+const moreBtn = document.getElementById('moreBtn');
+const moreSheet = document.getElementById('moreSheet');
+function setSheet(open) {
+    moreSheet.classList.toggle('open', open);
+    moreBtn.setAttribute('aria-expanded', String(open));
+}
+moreBtn.addEventListener('click', (e) => { e.stopPropagation(); setSheet(!moreSheet.classList.contains('open')); });
+document.addEventListener('click', (e) => {
+    if (moreSheet.classList.contains('open') && !e.target.closest('#moreSheet, #moreBtn')) setSheet(false);
 });
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') setSheet(false); });
 
 const picker = setupTimeRangePicker({ onApply: fetchData });
+
+// Zoom buttons (phones): drag-to-zoom is mouse-only, so the page still
+// scrolls under a finger.
+function zoomBy(factor) {
+    const { fromMs, toMs } = picker.getCurrentRange();
+    const r = zoomRange(fromMs, toMs, factor);
+    skipAnimation = true;
+    picker.applyRange(String(r.fromMs), String(r.toMs));
+}
+document.getElementById('zoomIn').addEventListener('click', () => zoomBy(0.5));
+document.getElementById('zoomOut').addEventListener('click', () => zoomBy(2));
 
 setZoomCallback(({ min, max }) => {
     // Skipping animation avoids filler plugin errors during zoom redraws
@@ -443,7 +590,13 @@ outdoorTempEnabled = outdoorTempCheckbox.checked;
 outdoorTempCheckbox.addEventListener('change', () => {
     outdoorTempEnabled = outdoorTempCheckbox.checked;
     setParam('outdoorTemp', outdoorTempCheckbox.checked ? '1' : null);
-    for (const rc of roomCharts) rc.chart.update();
+    // The overlay is a dataset: rebuild them now rather than at the next
+    // refresh. Not animated: changing datasets mid-animation breaks the
+    // filler plugin (as with zoom).
+    if (allData) {
+        skipAnimation = true;
+        updateCharts(allData);
+    }
 });
 
 reorder = setupReorder(document.getElementById('rooms-container'), {
@@ -451,5 +604,15 @@ reorder = setupReorder(document.getElementById('rooms-container'), {
     urlParam: 'roomOrder',
 });
 
-fetchData();
-setInterval(fetchData, REFRESH_MS);
+// Refresh every minute while the page is visible; a hidden tab doesn't
+// fetch, and catches up as soon as it is shown again.
+let lastFetch = 0;
+function refresh() {
+    lastFetch = Date.now();
+    fetchData();
+}
+refresh();
+setInterval(() => { if (!document.hidden) refresh(); }, REFRESH_MS);
+document.addEventListener('visibilitychange', () => {
+    if (!document.hidden && Date.now() - lastFetch >= REFRESH_MS) refresh();
+});

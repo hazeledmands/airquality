@@ -8,7 +8,8 @@ import {
     setupAnnotationUI,
     setAnnotationsEditable,
     fillTooltip,
-} from '../annotations.js';
+    isTouchClick,
+} from "../annotations.js";
 
 // ---- helpers ----
 
@@ -365,5 +366,16 @@ describe('fillTooltip', () => {
         expect(time.textContent).toBe('Oct 31');
         expect(note.textContent).toBe('<img src=x onerror=alert(1)>');
         expect(el.innerHTML).toBe('');
+    });
+});
+
+// On a phone a tap shows the touch readout; it must not also open the
+// "add note" popover. Notes are added from the readout instead.
+describe('isTouchClick', () => {
+    it('recognises clicks that come from a touch', () => {
+        expect(isTouchClick({ pointerType: 'touch' }, -Infinity, 0)).toBe(true);
+        expect(isTouchClick({ pointerType: 'mouse' }, 1000, 1200)).toBe(true); // synthetic click right after touchend
+        expect(isTouchClick({ pointerType: 'mouse' }, 1000, 5000)).toBe(false);
+        expect(isTouchClick({}, -Infinity, 5000)).toBe(false);
     });
 });
