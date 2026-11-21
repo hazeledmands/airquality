@@ -19,6 +19,7 @@ import (
 	"github.com/hazel/airquality/purpleair"
 	"github.com/hazel/airquality/sensibo"
 	"github.com/hazel/airquality/store"
+	"github.com/hazel/airquality/tempest"
 )
 
 type options struct {
@@ -49,6 +50,7 @@ func parseConfig(args []string) options {
 
 func printUsage(_ *flag.FlagSet) {
 	fmt.Fprintf(os.Stderr, `Usage: airquality [options]
+       airquality tempest-backfill [--from DATE] [--to DATE] [--station ID]
 
 Continuously logs air quality sensor data to PostgreSQL.
 
@@ -64,6 +66,11 @@ Environment:
   SENSIBO_API_KEY     Sensibo cloud API key
   PURPLEAIR_HOSTS     comma-separated PurpleAir sensor IPs (overrides config)
   WEATHER_LAT/LON     outdoor weather location (overrides config)
+  TEMPEST_TOKEN       WeatherFlow personal access token; enables the Tempest
+  TEMPEST_STATION_ID  Tempest station (overrides config; default: the first
+                      station with a Tempest)
+  TEMPEST_API_URL     override the WeatherFlow REST/WebSocket base URLs
+  TEMPEST_WS_URL      (for testing against a stub)
   DATABASE_URL        PostgreSQL connection string (required)
   AUTH_USER_HEADER    request header a trusted proxy sets to the signed-in
                       user (e.g. X-authentik-username); when set, writes
@@ -74,6 +81,10 @@ At least one sensor must be configured.
 }
 
 func main() {
+	if len(os.Args) > 1 && os.Args[1] == "tempest-backfill" {
+		tempestBackfillMain(os.Args[2:])
+		return
+	}
 	cfg := parseConfig(os.Args[1:])
 
 	fileCfg, err := config.Load(cfg.configPath)
@@ -88,8 +99,14 @@ func main() {
 	purpleairHosts := resolvePurpleAirHosts(os.Getenv("PURPLEAIR_HOSTS"), fileCfg)
 	weatherClient := resolveWeatherClient(os.Getenv("WEATHER_LAT"), os.Getenv("WEATHER_LON"), fileCfg)
 
-	if sensiboKey == "" && len(purpleairHosts) == 0 {
-		log.Fatal("No sensors configured. Set SENSIBO_API_KEY and/or PURPLEAIR_HOSTS.")
+	tempestToken := os.Getenv("TEMPEST_TOKEN")
+	tempestStationID, err := resolveTempestStationID(os.Getenv("TEMPEST_STATION_ID"), fileCfg)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	if sensiboKey == "" && len(purpleairHosts) == 0 && tempestToken == "" {
+		log.Fatal("No sensors configured. Set SENSIBO_API_KEY, PURPLEAIR_HOSTS and/or TEMPEST_TOKEN.")
 	}
 
 	dbURL := os.Getenv("DATABASE_URL")
@@ -103,7 +120,18 @@ func main() {
 	defer db.Close()
 	log.Printf("Connected to database")
 
-	cache, err := newDataCache(context.Background(), db)
+	// Tempest is optional: without its migration it is disabled, loudly,
+	// and everything else keeps running.
+	tempestEnabled := tempestToken != ""
+	if tempestEnabled {
+		ok, err := db.TempestTablesExist(context.Background())
+		if err != nil || !ok {
+			log.Printf("TEMPEST DISABLED: TEMPEST_TOKEN is set but the tempest tables are missing (%v); apply supabase/migrations/20261120000000_create_tempest.sql and restart", err)
+			tempestEnabled = false
+		}
+	}
+
+	cache, err := newDataCache(context.Background(), db, tempestEnabled)
 	if err != nil {
 		log.Fatalf("Failed to backfill cache: %v", err)
 	}
@@ -115,9 +143,34 @@ func main() {
 		log.Printf("AUTH_USER_HEADER unset: anyone can edit annotations")
 	}
 
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer stop()
+
+	var tempestRec *tempestRecorder
+	if tempestToken != "" {
+		m.SetTempestEnabled(tempestEnabled)
+	}
+	tempestWS := os.Getenv("TEMPEST_WS_URL")
+	if tempestEnabled {
+		client := tempest.NewClient(tempestToken)
+		if u := os.Getenv("TEMPEST_API_URL"); u != "" {
+			client.BaseURL = u
+		}
+		tempestRec = newTempestRecorder(client, db, cache, m, fileCfg, tempestStationID, cfg.verbose)
+	}
+
 	if cfg.once {
-		captureAll(context.Background(), m, db, cache, fileCfg, sensiboKey, purpleairHosts, weatherClient, cfg.verbose)
+		captureAll(ctx, m, db, cache, fileCfg, sensiboKey, purpleairHosts, weatherClient, cfg.verbose)
+		if tempestRec != nil {
+			runTempest(ctx, tempestRec, tempestToken, tempestWS, fileCfg.Tempest, true, cfg.verbose)
+		}
 		return
+	}
+
+	// Tempest polls on its own cadence (tempest.poll_interval), independent
+	// of --interval; rows are deduplicated on (device, timestamp).
+	if tempestRec != nil {
+		go runTempest(ctx, tempestRec, tempestToken, tempestWS, fileCfg.Tempest, false, cfg.verbose)
 	}
 
 	go func() {
@@ -138,19 +191,16 @@ func main() {
 	}()
 
 	log.Printf("Logging to database every %s (Ctrl+C to stop)", cfg.interval)
-	captureAll(context.Background(), m, db, cache, fileCfg, sensiboKey, purpleairHosts, weatherClient, cfg.verbose)
+	captureAll(ctx, m, db, cache, fileCfg, sensiboKey, purpleairHosts, weatherClient, cfg.verbose)
 
 	ticker := time.NewTicker(cfg.interval)
 	defer ticker.Stop()
 
-	sig := make(chan os.Signal, 1)
-	signal.Notify(sig, os.Interrupt)
-
 	for {
 		select {
 		case <-ticker.C:
-			captureAll(context.Background(), m, db, cache, fileCfg, sensiboKey, purpleairHosts, weatherClient, cfg.verbose)
-		case <-sig:
+			captureAll(ctx, m, db, cache, fileCfg, sensiboKey, purpleairHosts, weatherClient, cfg.verbose)
+		case <-ctx.Done():
 			log.Println("Stopping.")
 			return
 		}

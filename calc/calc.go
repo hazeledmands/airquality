@@ -23,3 +23,23 @@ func DewPoint(tempC, humidity float64) float64 {
 	gamma := math.Log(humidity/100.0) + (b*tempC)/(c+tempC)
 	return (c * gamma) / (b - gamma)
 }
+
+// SeaLevelPressure reduces station pressure (hPa) at elevation z (m) to sea
+// level, with WeatherFlow's formula
+// (https://weatherflow.github.io/Tempest/api/derived-metric-formulas.html).
+func SeaLevelPressure(stationHPa, z float64) float64 {
+	const (
+		p0     = 1013.25 // standard sea-level pressure, hPa
+		rd     = 287.05  // gas constant for dry air, J/(kg·K)
+		gammaS = 0.0065  // standard lapse rate, K/m
+		g      = 9.80665 // gravity, m/s²
+		t0     = 288.15  // standard sea-level temperature, K
+	)
+	k := rd * gammaS / g
+	return stationHPa * math.Pow(1+math.Pow(p0/stationHPa, k)*(gammaS*z/t0), 1/k)
+}
+
+// HPaToInHg converts hectopascals to inches of mercury.
+func HPaToInHg(hpa float64) float64 {
+	return hpa / 33.8639
+}

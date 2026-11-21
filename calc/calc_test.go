@@ -81,3 +81,21 @@ func TestRoundTrip(t *testing.T) {
 		}
 	}
 }
+
+func TestSeaLevelPressure(t *testing.T) {
+	// At sea level nothing changes.
+	if got := SeaLevelPressure(1013.25, 0); math.Abs(got-1013.25) > 1e-9 {
+		t.Errorf("z=0: %v", got)
+	}
+	// About 1.2 hPa per 10 m near sea level.
+	got := SeaLevelPressure(1013.8, 22)
+	if math.Abs(got-1016.44) > 0.02 {
+		t.Errorf("z=22: %v, want ~1016.44", got)
+	}
+}
+
+func TestHPaToInHg(t *testing.T) {
+	if got := HPaToInHg(1013.25); math.Abs(got-29.92) > 0.005 {
+		t.Errorf("%v", got)
+	}
+}

@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/hazel/airquality/calc"
 	"github.com/hazel/airquality/logger"
@@ -150,5 +151,46 @@ func TestAdjust_NoOffsetsIsUnchanged(t *testing.T) {
 	got, adjusted := cfg.Adjust(rec)
 	if adjusted || got != rec {
 		t.Errorf("want unchanged, got %+v adjusted=%v", got, adjusted)
+	}
+}
+
+func TestLoad_Tempest(t *testing.T) {
+	p := writeFile(t, "tempest:\n  station_id: 1001\n  poll_interval: 2m\n  events: false\n")
+	cfg, err := Load(p)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.Tempest.StationID != 1001 {
+		t.Errorf("station_id = %d", cfg.Tempest.StationID)
+	}
+	if got := cfg.Tempest.PollEvery(); got != 2*time.Minute {
+		t.Errorf("PollEvery = %v", got)
+	}
+	if cfg.Tempest.EventsEnabled() {
+		t.Error("EventsEnabled = true, want false")
+	}
+}
+
+func TestTempestDefaults(t *testing.T) {
+	var tc Tempest
+	if tc.PollEvery() != time.Minute {
+		t.Errorf("PollEvery = %v, want 1m", tc.PollEvery())
+	}
+	if !tc.EventsEnabled() {
+		t.Error("EventsEnabled = false, want true by default")
+	}
+}
+
+func TestLoad_TempestTokenIsNotAConfigKey(t *testing.T) {
+	p := writeFile(t, "tempest:\n  token: abc\n")
+	if _, err := Load(p); err == nil {
+		t.Fatal("want error: the token is a secret and only read from TEMPEST_TOKEN")
+	}
+}
+
+func TestLoad_TempestPollTooFastIsError(t *testing.T) {
+	p := writeFile(t, "tempest:\n  poll_interval: 5s\n")
+	if _, err := Load(p); err == nil {
+		t.Fatal("want error for poll_interval below 30s")
 	}
 }

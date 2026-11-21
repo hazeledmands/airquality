@@ -35,6 +35,14 @@ type Metrics struct {
 	windspeed     *prometheus.GaugeVec
 	uvindex       *prometheus.GaugeVec
 	weathercode   *prometheus.GaugeVec
+
+	// Tempest-only gauges keyed by metric name; see tempest.go.
+	tempest         map[string]*prometheus.GaugeVec
+	strikeEvents    *prometheus.CounterVec
+	rainStartEvents *prometheus.CounterVec
+	rainTotal       *prometheus.CounterVec
+	strikesTotal    *prometheus.CounterVec
+	tempestEnabled  prometheus.Gauge
 }
 
 func New() *Metrics {
@@ -125,6 +133,7 @@ func New() *Metrics {
 		m.p03, m.p05, m.p10, m.p25, m.p50, m.p100,
 		m.precipitation, m.windspeed, m.uvindex, m.weathercode,
 	)
+	m.registerTempest()
 	return m
 }
 

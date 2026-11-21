@@ -1,8 +1,10 @@
 // Package config loads the optional YAML config file: sensor hosts, weather
-// location, and per-sensor room assignments and calibration offsets.
+// location, Tempest station settings, and per-sensor room assignments and
+// calibration offsets.
 //
-// Secrets (SENSIBO_API_KEY, DATABASE_URL) are never read from here; they stay
-// in the environment.
+// Secrets (SENSIBO_API_KEY, TEMPEST_TOKEN, DATABASE_URL) are never read from
+// here; they stay in the environment. Unknown keys are rejected, so a secret
+// pasted into the file fails startup instead of being silently accepted.
 package config
 
 import (
@@ -12,6 +14,7 @@ import (
 	"io"
 	"os"
 	"strings"
+	"time"
 
 	"gopkg.in/yaml.v3"
 
@@ -22,6 +25,7 @@ import (
 type Config struct {
 	PurpleAir PurpleAir `yaml:"purpleair"`
 	Weather   Weather   `yaml:"weather"`
+	Tempest   Tempest   `yaml:"tempest"`
 	// Sensors is keyed by "source/sensor_id", e.g. "purpleair/a4:e5:7c:28:49:7".
 	Sensors map[string]Sensor `yaml:"sensors"`
 }
@@ -33,6 +37,34 @@ type PurpleAir struct {
 type Weather struct {
 	Lat *float64 `yaml:"lat"`
 	Lon *float64 `yaml:"lon"`
+}
+
+// Tempest holds the non-secret WeatherFlow Tempest settings. The station is
+// recorded only when TEMPEST_TOKEN is set.
+type Tempest struct {
+	// StationID picks the station; 0 means the first one the token sees with a
+	// Tempest device. TEMPEST_STATION_ID overrides it.
+	StationID int `yaml:"station_id"`
+	// PollInterval is how often the REST API is asked for new observations,
+	// independent of --interval. Default 1m, matching the device's report
+	// interval; minimum 30s.
+	PollInterval time.Duration `yaml:"poll_interval"`
+	// Events turns the WebSocket listener for lightning strikes and rain
+	// start on or off. Default on.
+	Events *bool `yaml:"events"`
+}
+
+// PollEvery returns the REST poll interval, defaulting to one minute.
+func (t Tempest) PollEvery() time.Duration {
+	if t.PollInterval == 0 {
+		return time.Minute
+	}
+	return t.PollInterval
+}
+
+// EventsEnabled reports whether to run the WebSocket event listener.
+func (t Tempest) EventsEnabled() bool {
+	return t.Events == nil || *t.Events
 }
 
 type Sensor struct {
@@ -72,6 +104,9 @@ func Load(path string) (Config, error) {
 func (c Config) validate() error {
 	if (c.Weather.Lat == nil) != (c.Weather.Lon == nil) {
 		return errors.New("weather: lat and lon must be set together")
+	}
+	if c.Tempest.PollInterval != 0 && c.Tempest.PollInterval < 30*time.Second {
+		return errors.New("tempest: poll_interval must be at least 30s")
 	}
 	for key := range c.Sensors {
 		source, id, ok := strings.Cut(key, "/")

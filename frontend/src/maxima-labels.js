@@ -21,7 +21,7 @@ export const maximaLabelsPlugin = {
 
         for (let di = 0; di < chart.data.datasets.length; di++) {
             const dataset = chart.data.datasets[di];
-            if (dataset.stepped) continue; // skip AC state
+            if (dataset.stepped || dataset.noPeaks) continue; // AC state, or opted out
 
             const meta = chart.getDatasetMeta(di);
             if (meta.hidden) continue;

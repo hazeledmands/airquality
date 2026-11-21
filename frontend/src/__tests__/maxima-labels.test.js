@@ -75,6 +75,13 @@ describe('maximaLabelsPlugin', () => {
         expect(chart.ctx.fillText).not.toHaveBeenCalled();
     });
 
+    it('skips datasets marked noPeaks', () => {
+        const ds = { data: [{ y: 1 }, { y: 10 }, { y: 3 }], borderColor: '#fff', noPeaks: true };
+        const chart = makeChart([ds]);
+        maximaLabelsPlugin.afterDatasetsDraw(chart);
+        expect(chart.ctx.fillText).not.toHaveBeenCalled();
+    });
+
     it('skips hidden datasets', () => {
         const ds = {
             data: [{ y: 1 }, { y: 5 }, { y: 3 }],
