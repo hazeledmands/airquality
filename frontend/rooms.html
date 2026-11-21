@@ -281,8 +281,8 @@
             .chart-card { padding: 0.5rem 0; }
             .room-latest { font-size: 0.75rem; gap: 0.25rem 1rem; }
         }
-        /* Phones, portrait or landscape (matches isCompact() in layout.js). */
-        @media (max-width: 600px), (max-height: 500px) {
+        /* Phones, portrait or landscape: COMPACT_QUERY in layout.js. */
+        @media (max-width: 600px), (max-height: 500px) and (pointer: coarse) {
             .date-range { flex-wrap: nowrap; padding: 0 0.5rem; gap: 0.25rem; }
             .trp-wrap { flex: 1; min-width: 0; gap: 0.25rem; }
             .date-range button, #moreBtn {

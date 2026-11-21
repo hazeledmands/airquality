@@ -2,12 +2,22 @@
 // short in landscape) get fixed pixel heights instead of aspect ratios, so a
 // chart's plot area doesn't shrink to a sliver as the screen narrows.
 
-// Matches the CSS media query `(max-width: 600px), (max-height: 500px)`.
-export function isCompact(width = globalThis.innerWidth, height = globalThis.innerHeight) {
-    return width <= 600 || height <= 500;
-}
+// The phone layout: narrow screens, or short ones with a touch (coarse)
+// pointer, i.e. phones in landscape. A short desktop window keeps the desktop
+// layout and its hover tooltips. rooms.html uses this exact media query; a
+// test keeps the two in sync.
+export const COMPACT_QUERY = '(max-width: 600px), (max-height: 500px) and (pointer: coarse)';
 
-export const COMPACT_QUERY = '(max-width: 600px), (max-height: 500px)';
+// With no arguments, asks the browser to evaluate COMPACT_QUERY, so JS always
+// agrees with the CSS. With arguments (tests), evaluates the same rule.
+export function isCompact(width, height, coarse = false) {
+    if (width === undefined && typeof globalThis.matchMedia === 'function') {
+        return globalThis.matchMedia(COMPACT_QUERY).matches;
+    }
+    const w = width ?? globalThis.innerWidth;
+    const h = height ?? globalThis.innerHeight;
+    return w <= 600 || (h <= 500 && coarse);
+}
 
 // Chart heights in px on phones; the wind direction strip uses its height at
 // every width (an aspect ratio would flatten it on mid-width screens).
@@ -37,18 +47,20 @@ export function zoomRange(fromMs, toMs, factor, nowMs = Date.now()) {
     return { fromMs: from, toMs: to };
 }
 
-// Wraps a resize handler: debounced, and run only when the width changed.
-// iOS fires resize as the address bar shows and hides (height only); redrawing
-// a dozen charts for that is wasted work.
-export function resizeGate(fn, ms = 150, getWidth = () => globalThis.innerWidth) {
-    let lastWidth = getWidth();
+// Wraps a resize handler: debounced, and run only when the width or the
+// compact layout changed. iOS fires resize as the address bar shows and hides
+// (height only); redrawing a dozen charts for that is wasted work. A
+// height-only resize that crosses into or out of the phone layout does run,
+// since the CSS switches with it.
+export function resizeGate(fn, ms = 150, getKey = () => `${globalThis.innerWidth}|${isCompact()}`) {
+    let lastKey = getKey();
     let timer = null;
     return () => {
         clearTimeout(timer);
         timer = setTimeout(() => {
-            const w = getWidth();
-            if (w === lastWidth) return;
-            lastWidth = w;
+            const key = getKey();
+            if (key === lastKey) return;
+            lastKey = key;
             fn();
         }, ms);
     };

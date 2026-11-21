@@ -10,7 +10,7 @@ import { humidityHighlightPlugin, setHumidityHighlightEnabled } from './humidity
 import { daylightPlugin, setDaylightPairs } from './daylight-plugin.js';
 import { setupTimeRangePicker } from './time-range-picker.js';
 import { createDragHandle, createChartBox, sizeChartBox } from './chart-card.js';
-import { isCompact, sizeOptions, sizingFor, zoomRange, resizeGate, roundTick, niceRange } from './layout.js';
+import { isCompact, COMPACT_QUERY, sizeOptions, sizingFor, zoomRange, resizeGate, roundTick, niceRange } from './layout.js';
 import { renderKeyRow } from './key-row.js';
 import { readoutFor, createGesture } from './readout.js';
 import { setupReorder } from './reorder.js';
@@ -340,16 +340,21 @@ function updateCharts(data) {
         computeStatus(sensors, acStates) + tempestStatus + ` \u00B7 updated ${new Date().toLocaleTimeString()}`;
 }
 
-// Re-size for a new width (rotation, window resize). Debounced, skipped for
-// height-only changes (the iOS address bar), and not animated: animating a
+// Re-size for a new width or layout (rotation, window resize, crossing into
+// or out of the phone layout). Debounced, skipped for height-only changes
+// that keep the layout (the iOS address bar), and not animated: animating a
 // dozen charts on every resize cost three ~170 ms long tasks.
-window.addEventListener('resize', resizeGate(() => {
+function relayout() {
+    picker?.refreshLabel();
     const ar = getAspectRatio(window.innerWidth);
     const compact = isCompact();
     for (const rc of roomCharts) {
         const kind = rc.kind || 'main';
         sizeOptions(rc.chart.options, kind, compact, ar);
         if (rc.box) sizeChartBox(rc.box, sizingFor(kind, compact, ar).height);
+        // Chart.js re-measures only when its container's width changes;
+        // after a sizing-mode switch at the same width it must be told.
+        rc.chart.resize();
         rc.chart.update('none');
         if (rc.keyRow) renderKeyRow(rc.keyRow, rc.chart);
         if (rc.heatmapCanvas && rc.roomData?.particles) {
@@ -357,7 +362,10 @@ window.addEventListener('resize', resizeGate(() => {
             renderHeatmap(rc.heatmapCanvas, rc.roomData.particles, xRange, getHoverTimestamp(), getDragState(), currentStepSize);
         }
     }
-}));
+}
+window.addEventListener('resize', resizeGate(relayout));
+// The layout can also flip without a resize (a mouse attached to a tablet).
+window.matchMedia?.(COMPACT_QUERY).addEventListener?.('change', relayout);
 
 // --- Touch readout (phones) -------------------------------------------------
 // A tap, press-and-hold or tap-then-drag on any chart moves the synced

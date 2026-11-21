@@ -59,7 +59,7 @@ export function formatRangeLabel(fromExpr, toExpr, now = new Date()) {
 //   #trp-prev      — shift range backwards
 //   #trp-next      — shift range forwards
 //
-// Returns { getCurrentRange, applyRange }.
+// Returns { getCurrentRange, applyRange, refreshLabel }.
 export function setupTimeRangePicker({ onApply }) {
     const trigger  = document.getElementById('trp-trigger');
     const popover  = document.getElementById('trp-popover');
@@ -172,5 +172,6 @@ export function setupTimeRangePicker({ onApply }) {
         }
     });
 
-    return { getCurrentRange, applyRange };
+    // refreshLabel re-renders the button text, which is shorter on phones.
+    return { getCurrentRange, applyRange, refreshLabel: updateTrigger };
 }
