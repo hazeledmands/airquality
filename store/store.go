@@ -10,12 +10,15 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/hazel/airquality/logger"
-	"github.com/hazel/airquality/openmeteo"
 )
 
 // Store writes records to a Postgres database.
 type Store struct {
 	pool *pgxpool.Pool
+	// extras is true when the Open-Meteo migration (weather.cloud_cover,
+	// outdoor_air_quality, weather_forecast) is applied; without it weather
+	// is stored with the original columns only.
+	extras bool
 }
 
 // New connects to the database at the given URL and returns a Store.
@@ -28,7 +31,9 @@ func New(ctx context.Context, databaseURL string) (*Store, error) {
 		pool.Close()
 		return nil, fmt.Errorf("ping database: %w", err)
 	}
-	return &Store{pool: pool}, nil
+	st := &Store{pool: pool}
+	st.extras = st.detectOpenMeteoExtras(ctx)
+	return st, nil
 }
 
 // Close releases the connection pool.
@@ -84,75 +89,6 @@ func nullFloat(v float64) *float64 {
 		return nil
 	}
 	return &v
-}
-
-// InsertWeather writes a weather observation. Silently skips if an identical
-// location+minute already exists (ON CONFLICT DO NOTHING).
-func (s *Store) InsertWeather(ctx context.Context, r openmeteo.Reading) error {
-	sunrise := (*time.Time)(nil)
-	if !r.Sunrise.IsZero() {
-		sunrise = &r.Sunrise
-	}
-	sunset := (*time.Time)(nil)
-	if !r.Sunset.IsZero() {
-		sunset = &r.Sunset
-	}
-	_, err := s.pool.Exec(ctx, `
-		INSERT INTO weather
-			(timestamp, latitude, longitude,
-			 temp_c, humidity, dewpoint_c, precipitation_mm,
-			 weather_code, pressure_hpa, wind_speed_kmh, uv_index,
-			 sunrise, sunset)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
-		ON CONFLICT (latitude, longitude, minute_epoch(timestamp)) DO NOTHING`,
-		r.Time, r.Latitude, r.Longitude,
-		r.TempC, r.Humidity, r.DewPointC, r.PrecipitationMM,
-		r.WeatherCode, r.PressureHPa, r.WindSpeedKMH, r.UVIndex,
-		sunrise, sunset,
-	)
-	if err != nil {
-		return fmt.Errorf("insert weather: %w", err)
-	}
-	return nil
-}
-
-// QueryWeather returns weather rows between from (inclusive) and to (exclusive),
-// ordered ascending. Returns an empty slice (not an error) when the table is empty.
-func (s *Store) QueryWeather(ctx context.Context, from, to time.Time) ([]openmeteo.Reading, error) {
-	rows, err := s.pool.Query(ctx, `
-		SELECT timestamp, latitude, longitude, temp_c, humidity, dewpoint_c,
-		       precipitation_mm, weather_code, pressure_hpa,
-		       wind_speed_kmh, uv_index, sunrise, sunset
-		FROM weather
-		WHERE timestamp >= $1 AND timestamp < $2
-		ORDER BY timestamp ASC`,
-		from, to,
-	)
-	if err != nil {
-		return nil, fmt.Errorf("query weather: %w", err)
-	}
-	defer rows.Close()
-
-	var result []openmeteo.Reading
-	for rows.Next() {
-		var r openmeteo.Reading
-		var sunrise, sunset *time.Time
-		if err := rows.Scan(
-			&r.Time, &r.Latitude, &r.Longitude, &r.TempC, &r.Humidity, &r.DewPointC,
-			&r.PrecipitationMM, &r.WeatherCode, &r.PressureHPa,
-			&r.WindSpeedKMH, &r.UVIndex, &sunrise, &sunset,
-		); err != nil {
-			return nil, fmt.Errorf("scan weather row: %w", err)
-		}
-		if sunrise != nil {
-			r.Sunrise = *sunrise
-		}
-		if sunset != nil {
-			r.Sunset = *sunset
-		}
-		result = append(result, r)
-	}
-	return result, rows.Err()
 }
 
 // QueryReadings returns sensor readings between from (inclusive) and to (exclusive),

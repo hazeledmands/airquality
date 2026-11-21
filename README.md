@@ -34,12 +34,21 @@ Schema migrations live in `supabase/migrations/`. Apply them with `psql` or the 
 
 ### Outdoor weather (optional)
 
-Set `WEATHER_LAT` and `WEATHER_LON` to fetch outdoor conditions from [Open-Meteo](https://open-meteo.com/) on each capture cycle. Requires `DATABASE_URL` — weather data is stored in the `weather` table and surfaced in the dashboard.
+Set `WEATHER_LAT` and `WEATHER_LON` (south and west are negative) to fetch from [Open-Meteo](https://open-meteo.com/)'s free, keyless APIs. Requires `DATABASE_URL`.
 
 ```sh
 export WEATHER_LAT="12.3456"
 export WEATHER_LON="-65.4321"
 ```
+
+It records, on its own schedule (independent of `--interval`, about 150 calls a day, well inside the free tier's 10,000):
+- **Current weather** every 15 minutes (`weather` table): temperature, humidity, dew point, precipitation, weather code, sea-level pressure, wind, UV, cloud cover, sunrise/sunset (used for daylight shading).
+- **Outdoor air quality** hourly (`outdoor_air_quality`, from the CAMS model): PM2.5, PM10, ozone, NO₂, SO₂, CO, US and European AQI, dust, and pollen (alder, birch, grass, mugwort, olive, ragweed; modelled only for Europe, NULL elsewhere).
+- **Forecast** hourly (`weather_forecast`): the next three days' hourly temperature, chance and amount of precipitation, cloud cover, UV, wind and weather code. Each hour keeps the latest forecast made for it.
+
+Cloud cover, air quality and forecasts need `supabase/migrations/20261121000000_open_meteo_more.sql`. Until it is applied, the app logs `OPEN-METEO EXTRAS DISABLED` and keeps recording weather as before. Values outside physical ranges are stored as NULL with a log line (at most once per variable per hour), and failed requests are retried with backoff (honouring `Retry-After`), then again after five minutes.
+
+**Backfill.** `airquality weather-backfill --from DATE [--to DATE] [--delay 1s]` loads hourly weather from Open-Meteo's historical-forecast API (available up to today) and hourly air quality, in two-week requests. Re-running it is safe: weather hours already stored are kept, air quality is upserted. Backfilled history is hourly; live data is every 15 minutes. As with the Tempest backfill, a running server's dashboard sees the history after a restart.
 
 ### WeatherFlow Tempest (optional)
 
@@ -95,6 +104,7 @@ sensors:                       # keyed by source/sensor_id
 ```
 Usage: airquality [options]
        airquality tempest-backfill [--from DATE] [--to DATE] [--station ID] [--delay 1s]
+       airquality weather-backfill --from DATE [--to DATE] [--delay 1s]
 
 Options:
       --config path         YAML config file (default $AIRQUALITY_CONFIG)
@@ -153,7 +163,9 @@ In continuous mode, a web dashboard is served at `http://localhost:50233/` showi
 - Whether the ⋯ sheet, the readout or the expanded strip is open is transient, so none of it goes in the URL.
 
 When `WEATHER_LAT`/`WEATHER_LON` are configured, the rooms view also shows:
-- **Outdoor weather card** — current conditions strip (temp, humidity, wind in mph, precip) plus a dual-axis chart of outdoor temperature and UV index. The heading never shows the location
+- **Outdoor weather card** — a forecast strip (the next three days' high/low and chance of rain, and the next six hours' rain chance), a current conditions strip (temp, humidity, wind in mph, precip, cloud cover), and a chart of outdoor temperature and UV index over a faint cloud-cover fill. The heading never shows the location
+- **Outdoor air** — a strip (US AQI with its category, PM2.5, ozone, NO₂, pollen where modelled) and a chart of US AQI against PM2.5, ozone and NO₂ (µg/m³)
+- **Outdoor PM2.5 on indoor charts** — rooms that measure PM2.5 get the outdoor value as a dashed line on the same PM axis, and their strip shows "PM2.5 3.1 · outdoor 24", so you can tell when opening a window helps
 - **Daylight shading** — non-daylight hours are shaded on all charts using the sunrise/sunset times from Open-Meteo
 - **Outdoor temp overlay** — a toggle adds outdoor temperature as a dashed line on each indoor room chart for comparison; state persists in the URL (`?outdoorTemp=1`)
 
@@ -188,6 +200,10 @@ Exported metrics (all with `source`, `sensor_id`, `location`, `room` labels). `l
 | `airquality_aqi` | Air Quality Index |
 | `airquality_voc_kohm` | VOC gas resistance |
 | `airquality_uv_index` | UV index (Open-Meteo and Tempest) |
+| `airquality_cloud_cover_percent` | Cloud cover (Open-Meteo) |
+
+Outdoor air quality from Open-Meteo uses `source="weather"`, `location="outdoor"`: PM2.5, PM10 and US AQI on the shared `airquality_pm25_ugm3`, `airquality_pm10_ugm3` and `airquality_aqi`, plus `airquality_ozone_ugm3`, `airquality_no2_ugm3`, `airquality_so2_ugm3`, `airquality_co_ugm3`, `airquality_european_aqi`, `airquality_dust_ugm3` and `airquality_pollen_grains_m3{pollen="grass"|...}` (only where modelled). The forecast is `airquality_forecast_temperature_celsius`, `airquality_forecast_precip_probability_percent` and `airquality_forecast_cloud_cover_percent`, each with `hours_ahead` = 1, 3, 6, 12, 24, 48.
+
 
 The Tempest sets `airquality_temperature_celsius`, `_humidity_percent`, `_dewpoint_celsius`, `_pressure_mbar` (sea-level pressure, comparable to Open-Meteo's) and `_uv_index` with `source="tempest"`, `sensor_id` = device ID, `location` = station name. Its other fields have their own gauges, with the same labels. A null reading removes its series instead of reporting zero. Per-interval values are gauges; use the `_total` counters to sum rain or strikes over a range:
 

@@ -43,6 +43,10 @@ type Metrics struct {
 	rainTotal       *prometheus.CounterVec
 	strikesTotal    *prometheus.CounterVec
 	tempestEnabled  prometheus.Gauge
+
+	// Open-Meteo extras; see openmeteo.go.
+	cloudCover, ozone, no2, so2, co, euAQI, dust, pollen *prometheus.GaugeVec
+	forecastTemp, forecastPrecipProb, forecastCloud      *prometheus.GaugeVec
 }
 
 func New() *Metrics {
@@ -134,6 +138,7 @@ func New() *Metrics {
 		m.precipitation, m.windspeed, m.uvindex, m.weathercode,
 	)
 	m.registerTempest()
+	m.registerOpenMeteo()
 	return m
 }
 
@@ -175,6 +180,7 @@ func (m *Metrics) UpdateWeather(r openmeteo.Reading) {
 	m.windspeed.WithLabelValues(l...).Set(r.WindSpeedKMH)
 	m.uvindex.WithLabelValues(l...).Set(r.UVIndex)
 	m.weathercode.WithLabelValues(l...).Set(float64(r.WeatherCode))
+	setOrDelete(m.cloudCover, l, r.CloudCover)
 }
 
 func (m *Metrics) Handler() http.Handler {
