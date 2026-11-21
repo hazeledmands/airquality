@@ -1,7 +1,6 @@
 package metrics
 
 import (
-	"fmt"
 	"net/http"
 
 	"github.com/hazel/airquality/logger"
@@ -43,6 +42,10 @@ type Metrics struct {
 	rainTotal       *prometheus.CounterVec
 	strikesTotal    *prometheus.CounterVec
 	tempestEnabled  prometheus.Gauge
+
+	// Open-Meteo extras; see openmeteo.go.
+	cloudCover, ozone, no2, so2, co, euAQI, dust, pollen *prometheus.GaugeVec
+	forecastTemp, forecastPrecipProb, forecastCloud      *prometheus.GaugeVec
 }
 
 func New() *Metrics {
@@ -134,6 +137,7 @@ func New() *Metrics {
 		m.precipitation, m.windspeed, m.uvindex, m.weathercode,
 	)
 	m.registerTempest()
+	m.registerOpenMeteo()
 	return m
 }
 
@@ -165,8 +169,7 @@ func (m *Metrics) Update(rec logger.Record, room string) {
 // Shared measurements (temp, humidity, dewpoint, pressure) reuse the existing
 // gauges with source="weather". Weather-only fields get dedicated gauges.
 func (m *Metrics) UpdateWeather(r openmeteo.Reading) {
-	sensorID := fmt.Sprintf("%.4f,%.4f", r.Latitude, r.Longitude)
-	l := []string{"weather", sensorID, "outdoor", "outdoor"}
+	l := weatherLabels(r.Latitude, r.Longitude)
 	m.temperature.WithLabelValues(l...).Set(r.TempC)
 	m.humidity.WithLabelValues(l...).Set(r.Humidity)
 	m.dewpoint.WithLabelValues(l...).Set(r.DewPointC)
@@ -175,6 +178,7 @@ func (m *Metrics) UpdateWeather(r openmeteo.Reading) {
 	m.windspeed.WithLabelValues(l...).Set(r.WindSpeedKMH)
 	m.uvindex.WithLabelValues(l...).Set(r.UVIndex)
 	m.weathercode.WithLabelValues(l...).Set(float64(r.WeatherCode))
+	setOrDelete(m.cloudCover, l, r.CloudCover)
 }
 
 func (m *Metrics) Handler() http.Handler {

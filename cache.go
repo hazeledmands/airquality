@@ -41,6 +41,12 @@ type dataCache struct {
 	seenTempestEvents map[string]bool
 	tempestStation    *tempest.Station
 	tempestDevices    []tempest.Device
+	// Open-Meteo outdoor air quality (hourly, replaced on a repeated hour)
+	// and the latest forecast.
+	outdoorAir    []openmeteo.AirQuality
+	outdoorAirIdx map[int64]int
+	forecast      []openmeteo.ForecastHour
+
 	// tempestEnabled is true when Tempest recording runs; the dashboard
 	// then explains an empty range instead of hiding the section.
 	tempestEnabled bool
@@ -56,6 +62,26 @@ func newDataCache(ctx context.Context, db *store.Store, withTempest bool) (*data
 	}
 	if err := c.backfill(ctx, db); err != nil {
 		return nil, err
+	}
+	if db.OpenMeteoExtras() {
+		to := time.Now().UTC()
+		aq, err := db.QueryAirQuality(ctx, to.Add(-cacheDuration), to)
+		if err != nil {
+			return nil, fmt.Errorf("backfill air quality: %w", err)
+		}
+		c.addAirQuality(aq)
+		fc, err := db.QueryForecast(ctx, to.Add(-24*time.Hour), to.Add(5*24*time.Hour))
+		if err != nil {
+			return nil, fmt.Errorf("backfill forecast: %w", err)
+		}
+		hours := make([]openmeteo.ForecastHour, len(fc))
+		for i, f := range fc {
+			hours[i] = f.ForecastHour
+		}
+		c.setForecast(hours)
+		log.Printf("Cache backfilled: %d outdoor air quality rows, %d forecast hours", len(aq), len(hours))
+	} else {
+		log.Printf("OPEN-METEO EXTRAS DISABLED: apply supabase/migrations/20261121000000_open_meteo_more.sql and restart to record cloud cover, outdoor air quality and forecasts")
 	}
 	c.tempestEnabled = withTempest
 	if withTempest {
@@ -371,4 +397,75 @@ func weatherKey(r openmeteo.Reading) string {
 	return strconv.FormatFloat(r.Latitude, 'f', 6, 64) + "/" +
 		strconv.FormatFloat(r.Longitude, 'f', 6, 64) + "/" +
 		strconv.FormatInt(r.Time.Truncate(time.Minute).Unix(), 10)
+}
+
+// addAirQuality inserts samples, replacing any for the same hour, in time order.
+func (c *dataCache) addAirQuality(rows []openmeteo.AirQuality) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.outdoorAirIdx == nil {
+		c.outdoorAirIdx = make(map[int64]int)
+	}
+	for _, a := range rows {
+		k := a.Time.Unix()
+		if i, ok := c.outdoorAirIdx[k]; ok {
+			c.outdoorAir[i] = a
+			continue
+		}
+		c.outdoorAirIdx[k] = len(c.outdoorAir)
+		c.outdoorAir = append(c.outdoorAir, a)
+	}
+	sort.SliceStable(c.outdoorAir, func(i, j int) bool { return c.outdoorAir[i].Time.Before(c.outdoorAir[j].Time) })
+	for i, a := range c.outdoorAir {
+		c.outdoorAirIdx[a.Time.Unix()] = i
+	}
+}
+
+// snapshotAirQuality returns samples in [from, to], plus the last sample
+// before from (if within two hours), so the hourly line starts at the left
+// edge of the chart.
+func (c *dataCache) snapshotAirQuality(from, to time.Time) []openmeteo.AirQuality {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	out := make([]openmeteo.AirQuality, 0)
+	var before *openmeteo.AirQuality
+	for i, a := range c.outdoorAir {
+		if a.Time.Before(from) {
+			if from.Sub(a.Time) <= 2*time.Hour {
+				before = &c.outdoorAir[i]
+			}
+			continue
+		}
+		if !a.Time.After(to) {
+			out = append(out, a)
+		}
+	}
+	if before != nil {
+		// Served at from, as the value in effect when the range starts, so
+		// it doesn't stretch the shared x axis to the left.
+		first := *before
+		first.Time = from
+		out = append([]openmeteo.AirQuality{first}, out...)
+	}
+	return out
+}
+
+// setForecast replaces the cached forecast with the latest one.
+func (c *dataCache) setForecast(hours []openmeteo.ForecastHour) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.forecast = append([]openmeteo.ForecastHour(nil), hours...)
+}
+
+// forecastFrom returns the forecast hours starting at or after t.
+func (c *dataCache) forecastFrom(t time.Time) []openmeteo.ForecastHour {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	out := make([]openmeteo.ForecastHour, 0)
+	for _, h := range c.forecast {
+		if !h.Time.Before(t) {
+			out = append(out, h)
+		}
+	}
+	return out
 }

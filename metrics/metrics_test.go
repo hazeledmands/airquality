@@ -113,7 +113,7 @@ func TestUpdateWeather(t *testing.T) {
 	}
 	m.UpdateWeather(r)
 
-	labels := []string{"weather", "1.3521,103.8198", "outdoor", "outdoor"}
+	labels := []string{"weather", "open-meteo", "outdoor", "outdoor"}
 	if v := testutil.ToFloat64(m.temperature.WithLabelValues(labels...)); v != 28.5 {
 		t.Errorf("temperature = %v, want 28.5", v)
 	}

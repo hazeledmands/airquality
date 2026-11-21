@@ -35,6 +35,67 @@ type dashboardData struct {
 	Weather     []weatherReading `json:"weather"`
 	Annotations []annotationJSON `json:"annotations"`
 	Tempest     tempestData      `json:"tempest"`
+	// OutdoorAir is Open-Meteo's hourly air quality in the range; Forecast is
+	// the latest forecast from 24 h ago on, whatever the range, so the page
+	// has all of the station's local today for its high and low.
+	OutdoorAir []outdoorAirJSON `json:"outdoor_air"`
+	Forecast   []forecastJSON   `json:"forecast"`
+}
+
+// outdoorAirJSON is an air quality sample without the location (the page is
+// public).
+type outdoorAirJSON struct {
+	Timestamp     time.Time `json:"timestamp"`
+	PM25          *float64  `json:"pm2_5"`
+	PM10          *float64  `json:"pm10"`
+	Ozone         *float64  `json:"ozone"`
+	NO2           *float64  `json:"nitrogen_dioxide"`
+	SO2           *float64  `json:"sulphur_dioxide"`
+	CO            *float64  `json:"carbon_monoxide"`
+	USAQI         *float64  `json:"us_aqi"`
+	EuropeanAQI   *float64  `json:"european_aqi"`
+	Dust          *float64  `json:"dust"`
+	AlderPollen   *float64  `json:"alder_pollen"`
+	BirchPollen   *float64  `json:"birch_pollen"`
+	GrassPollen   *float64  `json:"grass_pollen"`
+	MugwortPollen *float64  `json:"mugwort_pollen"`
+	OlivePollen   *float64  `json:"olive_pollen"`
+	RagweedPollen *float64  `json:"ragweed_pollen"`
+}
+
+type forecastJSON struct {
+	Timestamp         time.Time `json:"timestamp"`
+	TempC             *float64  `json:"temp_c"`
+	PrecipProbability *float64  `json:"precip_probability"`
+	PrecipMM          *float64  `json:"precip_mm"`
+	CloudCover        *float64  `json:"cloud_cover"`
+	UVIndex           *float64  `json:"uv_index"`
+	WindSpeedKMH      *float64  `json:"wind_speed_kmh"`
+	WeatherCode       *int      `json:"weather_code"`
+}
+
+func outdoorAirRows(rows []openmeteo.AirQuality) []outdoorAirJSON {
+	out := make([]outdoorAirJSON, 0, len(rows))
+	for _, a := range rows {
+		out = append(out, outdoorAirJSON{
+			Timestamp: a.Time, PM25: a.PM25, PM10: a.PM10, Ozone: a.Ozone, NO2: a.NO2, SO2: a.SO2, CO: a.CO,
+			USAQI: a.USAQI, EuropeanAQI: a.EuropeanAQI, Dust: a.Dust,
+			AlderPollen: a.AlderPollen, BirchPollen: a.BirchPollen, GrassPollen: a.GrassPollen,
+			MugwortPollen: a.MugwortPollen, OlivePollen: a.OlivePollen, RagweedPollen: a.RagweedPollen,
+		})
+	}
+	return out
+}
+
+func forecastRows(hours []openmeteo.ForecastHour) []forecastJSON {
+	out := make([]forecastJSON, 0, len(hours))
+	for _, h := range hours {
+		out = append(out, forecastJSON{
+			Timestamp: h.Time, TempC: h.TempC, PrecipProbability: h.PrecipProbability, PrecipMM: h.PrecipMM,
+			CloudCover: h.CloudCover, UVIndex: h.UVIndex, WindSpeedKMH: h.WindSpeedKMH, WeatherCode: h.WeatherCode,
+		})
+	}
+	return out
 }
 
 type tempestData struct {
@@ -170,15 +231,16 @@ func buildTempestData(enabled bool, st *tempest.Station, devs []tempest.Device, 
 // is deliberately absent: the page is public. Weather code and pressure stay
 // in the database and on /metrics.
 type weatherReading struct {
-	Timestamp       string  `json:"timestamp"`
-	TempC           float64 `json:"temp_c"`
-	Humidity        float64 `json:"humidity"`
-	DewPointC       float64 `json:"dewpoint_c"`
-	PrecipitationMM float64 `json:"precipitation_mm"`
-	WindSpeedKMH    float64 `json:"wind_speed_kmh"`
-	UVIndex         float64 `json:"uv_index"`
-	Sunrise         string  `json:"sunrise"` // RFC3339, "" if zero
-	Sunset          string  `json:"sunset"`  // RFC3339, "" if zero
+	Timestamp       string   `json:"timestamp"`
+	TempC           float64  `json:"temp_c"`
+	Humidity        float64  `json:"humidity"`
+	DewPointC       float64  `json:"dewpoint_c"`
+	PrecipitationMM float64  `json:"precipitation_mm"`
+	WindSpeedKMH    float64  `json:"wind_speed_kmh"`
+	UVIndex         float64  `json:"uv_index"`
+	CloudCover      *float64 `json:"cloud_cover"`
+	Sunrise         string   `json:"sunrise"` // RFC3339, "" if zero
+	Sunset          string   `json:"sunset"`  // RFC3339, "" if zero
 }
 
 func weatherReadings(rows []openmeteo.Reading) []weatherReading {
@@ -192,6 +254,7 @@ func weatherReadings(rows []openmeteo.Reading) []weatherReading {
 			PrecipitationMM: r.PrecipitationMM,
 			WindSpeedKMH:    r.WindSpeedKMH,
 			UVIndex:         r.UVIndex,
+			CloudCover:      r.CloudCover,
 		}
 		if !r.Sunrise.IsZero() {
 			wr.Sunrise = r.Sunrise.UTC().Format(time.RFC3339)
@@ -347,6 +410,8 @@ func dataHandler(cache *dataCache, cfg config.Config) http.HandlerFunc {
 			ACStates:    groupACStates(acRecords, cache.latestACRooms()),
 			Weather:     weatherReadings(weatherRows),
 			Annotations: make([]annotationJSON, 0, len(annotationRows)),
+			OutdoorAir:  outdoorAirRows(cache.snapshotAirQuality(from, to)),
+			Forecast:    forecastRows(cache.forecastFrom(time.Now().UTC().Add(-24 * time.Hour))),
 			Tempest:     buildTempestData(cache.tempestEnabled, station, devices, tempestRows, cache.latestTempest(from, to), tempestEvents, cfg),
 		}
 		for _, a := range annotationRows {

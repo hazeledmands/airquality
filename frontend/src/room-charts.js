@@ -156,7 +156,28 @@ export function combinedChartOpts(ar, room) {
 
 // `opts` is `{ outdoorTempEnabled, currentWeather }` — passed in to avoid
 // module-level state coupling and to keep this function pure/testable.
-export function buildCombinedDatasets(room, { outdoorTempEnabled = false, currentWeather = [], stepMs = 0 } = {}) {
+const HOLD_MS = 2 * 3600_000;
+const ms = (x) => (typeof x === 'number' ? x : new Date(x).getTime());
+
+// Resamples an hourly series onto the x values of base, holding the latest
+// sample at or before each x for up to two hours (else null). Index-mode
+// tooltips pair datasets by position, so the overlay must match base point
+// for point.
+export function alignTo(base, hourly) {
+    const pts = hourly.filter(p => p.y != null).map(p => ({ t: ms(p.x), y: p.y })).sort((a, b) => a.t - b.t);
+    let j = -1;
+    return base.map(p => {
+        if (p.x == null) return { x: p.x, y: null };
+        const t = ms(p.x);
+        while (j + 1 < pts.length && pts[j + 1].t <= t) j++;
+        const hit = j >= 0 && t - pts[j].t <= HOLD_MS ? pts[j].y : null;
+        return { x: p.x, y: hit };
+    });
+}
+
+// outdoorPM is the outdoor PM2.5 series (outdoor-air.js), drawn on rooms
+// that measure PM2.5.
+export function buildCombinedDatasets(room, { outdoorTempEnabled = false, currentWeather = [], stepMs = 0, outdoorPM = null } = {}) {
     const datasets = [];
     // With several devices in one room, all lines of a metric share a color;
     // the device name in the label tells them apart in the tooltip.
@@ -226,6 +247,10 @@ export function buildCombinedDatasets(room, { outdoorTempEnabled = false, curren
         });
     }
 
+    if (outdoorPM && room.pm.length > 0) {
+        datasets.push({ ...outdoorPM, data: alignTo(room.pm[0].data, outdoorPM.data) });
+    }
+
     if (outdoorTempEnabled && currentWeather.length > 0 && isIndoorRoom(room)) {
         datasets.push({
             ...makeWeatherTempSeries(currentWeather),
@@ -247,13 +272,17 @@ function lastY(series) {
 // HTML for the latest-values strip above a room chart. With several devices,
 // each metric shows every device's value ("70.1 / 71.5°F") followed by a key
 // naming the devices in the same order.
-export function formatLatestValues(room) {
+// outdoorPM is the latest outdoor PM2.5, shown beside the indoor value.
+export function formatLatestValues(room, { outdoorPM = null } = {}) {
     if (!room.temp?.length || lastY(room.temp[0]) == null) return '';
     const join = (list, digits) => list.map(lastY).filter(v => v != null).map(v => v.toFixed(digits)).join(' / ');
     const parts = [`<span><span class="value">${join(room.temp, 1)}\u00B0F</span></span>`];
     if (room.humidity?.length) parts.push(`<span><span class="value">${join(room.humidity, 0)}%</span> humidity</span>`);
     if (room.dewpoint?.length) parts.push(`<span><span class="value">${join(room.dewpoint, 1)}\u00B0F</span> dew point</span>`);
-    if (room.pm?.length) parts.push(`<span>PM2.5 <span class="value">${join(room.pm, 1)}</span></span>`);
+    if (room.pm?.length) {
+        const outdoor = outdoorPM != null ? ` \u00B7 outdoor <span class="value">${outdoorPM.toFixed(0)}</span>` : '';
+        parts.push(`<span>PM2.5 <span class="value">${join(room.pm, 1)}</span>${outdoor}</span>`);
+    }
     if ((room.devices?.length ?? 0) > 1) parts.push(`<span class="devices">${room.devices.join(' / ')}</span>`);
     return parts.join('');
 }

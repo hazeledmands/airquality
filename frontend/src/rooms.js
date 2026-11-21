@@ -20,6 +20,7 @@ import { fetchAuth, loginUrl } from './auth.js';
 import { getParam, setParam } from './url-state.js';
 import { buildTempestSection, updateTempestSection, buildEmptyTempestSection } from './tempest-card.js';
 import { tempestAsWeather, tempestPanelIds } from './tempest.js';
+import { outdoorPMSeries, airDatasets, formatAirLatest, formatForecastStrip, cloudSeries, hasPollen } from './outdoor-air.js';
 
 Chart.register(crosshairPlugin);
 Chart.register(dragZoomPlugin);
@@ -35,6 +36,8 @@ let cleanupAnnotationUI = null;
 let reorder = null;
 let outdoorTempEnabled = false;
 let currentWeather = [];
+let currentOutdoorAir = []; // Open-Meteo air quality rows in range
+let currentForecast = [];   // forecast hours from now on
 let currentTempest = null; // { enabled, station, observations, latest, events } from /api/data
 let renderedLayout = []; // section/chart ids the DOM was last built for
 let skipAnimation = false; // set true before zoom-triggered updateCharts to avoid filler plugin errors
@@ -69,6 +72,8 @@ function weatherChartOpts(ar) {
                 min: 0,
                 afterFit: pinAxisWidth,
             },
+            // Cloud cover: a faint 0-100% fill behind the lines, no axis.
+            yCloud: { type: 'linear', display: false, min: 0, max: 100 },
         },
         plugins: {
             legend: { position: 'bottom', labels: { color: MUTED_TEXT, boxWidth: 16, boxHeight: 1, padding: 10, font: { size: 10 } } },
@@ -81,6 +86,43 @@ function weatherChartOpts(ar) {
         },
     };
     return sizeOptions(opts, 'main', isCompact(), ar);
+}
+
+// Outdoor air chart: US AQI on the left, pollutants in µg/m³ on the right,
+// pollen (Europe only) on a hidden axis.
+function airChartOpts(ar) {
+    const axis = (position, title, extra = {}) => ({
+        type: 'linear', position,
+        title: { display: true, text: title, color: '#888', font: { size: 11 } },
+        ticks: { color: '#888', maxTicksLimit: 4, callback: roundTick },
+        grid: position === 'left' ? { color: '#ffffff06' } : { drawOnChartArea: false },
+        min: 0,
+        afterFit: pinAxisWidth,
+        ...extra,
+    });
+    const opts = {
+        responsive: true,
+        animation: { duration: CHART_ANIMATION_MS },
+        interaction: { mode: 'index', intersect: false },
+        scales: {
+            x: {
+                type: 'time',
+                time: { tooltipFormat: 'ff' },
+                ticks: { color: MUTED_TEXT, autoSkip: true, maxTicksLimit: 8, maxRotation: 0, callback: xTickCallback, major: { enabled: true } },
+                grid: { color: '#ffffff06' },
+            },
+            yAQI: axis('left', 'AQI', { suggestedMax: 100 }),
+            yGas: axis('right', '\u00B5g/m\u00B3'),
+            yPollen: { type: 'linear', display: false, min: 0 },
+        },
+        plugins: {
+            legend: { position: 'bottom', labels: { color: MUTED_TEXT, boxWidth: 16, boxHeight: 1, padding: 10, font: { size: 10 } } },
+            tooltip: { backgroundColor: '#1e1e30', titleColor: '#ccc', bodyColor: '#aaa', borderColor: '#333', borderWidth: 1 },
+            humidityHighlight: { enabled: false },
+        },
+        elements: { point: { radius: 0, hoverRadius: 4 }, line: { borderWidth: 1.5, tension: 0 } },
+    };
+    return sizeOptions(opts, 'secondary', isCompact(), ar);
 }
 
 // The chart box and key row for a 'main' chart, sized for this screen.
@@ -101,6 +143,11 @@ function buildWeatherCard(weather, ar) {
     // No coordinates: the page is public.
     heading.appendChild(document.createTextNode('Open-Meteo'));
     section.appendChild(heading);
+
+    const forecast = document.createElement('div');
+    forecast.className = 'room-latest forecast-strip';
+    forecast.id = 'forecast-strip';
+    section.appendChild(forecast);
 
     const strip = document.createElement('div');
     strip.className = 'room-latest';
@@ -124,6 +171,29 @@ function buildWeatherCard(weather, ar) {
     registerZoomChart(chart);
     attachTouchReadout(chart);
     roomCharts.push({ room: '__weather__', chart, kind: 'main', box, keyRow });
+
+    if (currentOutdoorAir.length > 0) {
+        const airCard = document.createElement('div');
+        airCard.className = 'chart-card';
+        const label = document.createElement('div');
+        label.className = 'panel-label';
+        label.textContent = 'Outdoor air \u00B7 US AQI (rolling avg), \u00B5g/m\u00B3' + (hasPollen(currentOutdoorAir) ? ', pollen' : '');
+        airCard.appendChild(label);
+        const airStrip = document.createElement('div');
+        airStrip.className = 'room-latest';
+        airStrip.id = 'air-current';
+        airCard.appendChild(airStrip);
+        const parts = createChartBox('secondary');
+        sizeChartBox(parts.box, sizingFor('secondary', isCompact(), ar).height);
+        airCard.appendChild(parts.box);
+        airCard.appendChild(parts.keyRow);
+        section.appendChild(airCard);
+        const airChart = new Chart(parts.canvas, { type: 'line', data: { datasets: [] }, options: airChartOpts(ar) });
+        registerChart(airChart);
+        registerZoomChart(airChart);
+        attachTouchReadout(airChart);
+        roomCharts.push({ room: '__weather__/air', chart: airChart, kind: 'secondary', box: parts.box, keyRow: parts.keyRow });
+    }
     return section;
 }
 
@@ -145,12 +215,24 @@ function updateWeatherCard(weather) {
         if (latest.precipitation_mm) {
             parts.push(`<span><span class="value">${latest.precipitation_mm.toFixed(1)}</span> mm precip</span>`);
         }
+        if (latest.cloud_cover != null) {
+            parts.push(`<span><span class="value">${Math.round(latest.cloud_cover)}%</span> cloud</span>`);
+        }
         if (strip) strip.innerHTML = parts.join('');
 
         rc.chart.data.datasets = [
             { ...makeWeatherTempSeries(weather), yAxisID: 'y' },
             { ...makeUVSeries(weather), yAxisID: 'yUV' },
         ];
+        if (weather.some(r => r.cloud_cover != null)) rc.chart.data.datasets.push(cloudSeries(weather));
+    }
+    const forecastEl = document.getElementById('forecast-strip');
+    if (forecastEl) forecastEl.innerHTML = formatForecastStrip(currentForecast);
+    const air = roomCharts.find(r => r.room === '__weather__/air');
+    if (air) {
+        air.chart.data.datasets = airDatasets(currentOutdoorAir);
+        const airStrip = document.getElementById('air-current');
+        if (airStrip) airStrip.innerHTML = formatAirLatest(currentOutdoorAir[currentOutdoorAir.length - 1]);
     }
 }
 
@@ -246,10 +328,18 @@ function buildRoomDOM(rooms) {
     cleanupAnnotationUI = setupAnnotationUI(roomCharts, { onSave: saveAnnotation, onDelete: deleteAnnotation });
 }
 
+function latestOutdoorPM() {
+    for (let i = currentOutdoorAir.length - 1; i >= 0; i--) {
+        if (currentOutdoorAir[i].pm2_5 != null) return currentOutdoorAir[i].pm2_5;
+    }
+    return null;
+}
+
 function updateLatestValues(rooms) {
+    const outdoorPM = latestOutdoorPM();
     for (const room of rooms) {
         const el = document.querySelector(`.room-latest[data-room="${room.name}"]`);
-        if (el) el.innerHTML = formatLatestValues(room);
+        if (el) el.innerHTML = formatLatestValues(room, { outdoorPM });
     }
 }
 
@@ -267,6 +357,8 @@ function updateCharts(data) {
     const acStates = data.ac_states || [];
     const weather = data.weather || [];
     currentWeather = weather;
+    currentOutdoorAir = data.outdoor_air || [];
+    currentForecast = data.forecast || [];
     currentTempest = data.tempest || null;
     const tempestShown = hasTempest(currentTempest);
     setDaylightPairs(extractDaylightPairs(weather));
@@ -286,6 +378,7 @@ function updateCharts(data) {
     // Rebuild DOM if room set or weather presence changed
     const currentRooms = renderedLayout;
     const newRooms = (weather.length > 0 ? ['__weather__'] : [])
+        .concat(weather.length > 0 && currentOutdoorAir.length > 0 ? ['__weather__/air'] : [])
         .concat(tempestShown ? tempestPanelIds() : [])
         .concat(tempestEmpty(currentTempest) ? ['__tempest_empty__'] : [])
         .concat(rooms.map(r => r.name));
@@ -302,11 +395,13 @@ function updateCharts(data) {
     // The outdoor overlay prefers the on-site Tempest over Open-Meteo.
     const outdoorTemp = tempestShown ? tempestAsWeather(currentTempest.observations) : currentWeather;
 
+    const outdoorPM = currentOutdoorAir.length > 0 ? outdoorPMSeries(currentOutdoorAir) : null;
+
     // Set chart data (no update yet)
     for (const room of rooms) {
         const rc = roomCharts.find(r => r.room === room.name);
         if (!rc) continue;
-        rc.chart.data.datasets = buildCombinedDatasets(room, { outdoorTempEnabled, currentWeather: outdoorTemp, stepMs: currentStepSize });
+        rc.chart.data.datasets = buildCombinedDatasets(room, { outdoorTempEnabled, currentWeather: outdoorTemp, stepMs: currentStepSize, outdoorPM });
         rc.roomData = room;
     }
 

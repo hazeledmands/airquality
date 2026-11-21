@@ -51,6 +51,7 @@ func parseConfig(args []string) options {
 func printUsage(_ *flag.FlagSet) {
 	fmt.Fprintf(os.Stderr, `Usage: airquality [options]
        airquality tempest-backfill [--from DATE] [--to DATE] [--station ID]
+       airquality weather-backfill --from DATE [--to DATE]
 
 Continuously logs air quality sensor data to PostgreSQL.
 
@@ -83,6 +84,10 @@ At least one sensor must be configured.
 func main() {
 	if len(os.Args) > 1 && os.Args[1] == "tempest-backfill" {
 		tempestBackfillMain(os.Args[2:])
+		return
+	}
+	if len(os.Args) > 1 && os.Args[1] == "weather-backfill" {
+		weatherBackfillMain(os.Args[2:])
 		return
 	}
 	cfg := parseConfig(os.Args[1:])
@@ -150,8 +155,19 @@ func main() {
 		tempestRec = newTempestRecorder(client, db, cache, m, fileCfg, tempestStationID, cfg.verbose)
 	}
 
+	var weatherRec *weatherRecorder
+	if weatherClient != nil {
+		weatherRec = &weatherRecorder{
+			api: weatherClient, db: db, cache: cache, m: m, now: time.Now,
+			lat: weatherClient.Latitude, lon: weatherClient.Longitude, verbose: cfg.verbose,
+		}
+	}
+
 	if cfg.once {
-		captureAll(ctx, m, db, cache, fileCfg, sensiboKey, purpleairHosts, weatherClient, cfg.verbose)
+		captureAll(ctx, m, db, cache, fileCfg, sensiboKey, purpleairHosts, cfg.verbose)
+		if weatherRec != nil {
+			runWeather(ctx, weatherRec, true)
+		}
 		if tempestRec != nil {
 			runTempest(ctx, tempestRec, tempestToken, tempestWS, fileCfg.Tempest, true, cfg.verbose)
 		}
@@ -162,6 +178,10 @@ func main() {
 	// of --interval; rows are deduplicated on (device, timestamp).
 	if tempestRec != nil {
 		go runTempest(ctx, tempestRec, tempestToken, tempestWS, fileCfg.Tempest, false, cfg.verbose)
+	}
+	// Open-Meteo, likewise: weather every 15 min, air quality and forecast hourly.
+	if weatherRec != nil {
+		go runWeather(ctx, weatherRec, false)
 	}
 
 	go func() {
@@ -175,7 +195,7 @@ func main() {
 	}()
 
 	log.Printf("Logging to database every %s (Ctrl+C to stop)", cfg.interval)
-	captureAll(ctx, m, db, cache, fileCfg, sensiboKey, purpleairHosts, weatherClient, cfg.verbose)
+	captureAll(ctx, m, db, cache, fileCfg, sensiboKey, purpleairHosts, cfg.verbose)
 
 	ticker := time.NewTicker(cfg.interval)
 	defer ticker.Stop()
@@ -183,7 +203,7 @@ func main() {
 	for {
 		select {
 		case <-ticker.C:
-			captureAll(ctx, m, db, cache, fileCfg, sensiboKey, purpleairHosts, weatherClient, cfg.verbose)
+			captureAll(ctx, m, db, cache, fileCfg, sensiboKey, purpleairHosts, cfg.verbose)
 		case <-ctx.Done():
 			log.Println("Stopping.")
 			return
@@ -191,7 +211,7 @@ func main() {
 	}
 }
 
-func captureAll(ctx context.Context, m *metrics.Metrics, db *store.Store, cache *dataCache, fileCfg config.Config, sensiboKey string, purpleairHosts []string, weatherClient *openmeteo.Client, verbose bool) {
+func captureAll(ctx context.Context, m *metrics.Metrics, db *store.Store, cache *dataCache, fileCfg config.Config, sensiboKey string, purpleairHosts []string, verbose bool) {
 	now := time.Now()
 
 	if sensiboKey != "" {
@@ -200,9 +220,6 @@ func captureAll(ctx context.Context, m *metrics.Metrics, db *store.Store, cache 
 	}
 	if len(purpleairHosts) > 0 {
 		capturePurpleAir(ctx, m, db, cache, fileCfg, purpleairHosts, now, verbose)
-	}
-	if weatherClient != nil {
-		captureWeather(ctx, m, db, cache, weatherClient, verbose)
 	}
 }
 
@@ -358,27 +375,6 @@ func printVerboseRecord(rec logger.Record) {
 		fmt.Printf("    ≥2.5µm:      %.1f /dL\n", rec.P25)
 		fmt.Printf("    ≥5.0µm:      %.1f /dL\n", rec.P50)
 		fmt.Printf("    ≥10µm:       %.1f /dL\n", rec.P100)
-	}
-}
-
-func captureWeather(ctx context.Context, m *metrics.Metrics, db *store.Store, cache *dataCache, client *openmeteo.Client, verbose bool) {
-	reading, err := client.Fetch(ctx)
-	if err != nil {
-		log.Printf("Weather error: %v", err)
-		return
-	}
-	if err := db.InsertWeather(context.Background(), reading); err != nil {
-		log.Printf("DB weather write error: %v", err)
-	}
-	cache.addWeather(reading)
-	m.UpdateWeather(reading)
-	if verbose {
-		log.Printf("  weather (%.4f,%.4f): %.1f°C, %.0f%%, dew point %.1f°C, pressure %.1f hPa, wind %.1f km/h, UV %.1f, precip %.1f mm",
-			reading.Latitude, reading.Longitude,
-			reading.TempC, reading.Humidity, reading.DewPointC,
-			reading.PressureHPa, reading.WindSpeedKMH, reading.UVIndex, reading.PrecipitationMM)
-	} else {
-		log.Printf("  weather: %.1f°C, %.0f%% humidity, %.1f hPa", reading.TempC, reading.Humidity, reading.PressureHPa)
 	}
 }
 

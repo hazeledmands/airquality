@@ -176,7 +176,23 @@ func medianWeatherReading(recs []openmeteo.Reading, ts time.Time) openmeteo.Read
 		PressureHPa:     get(func(r openmeteo.Reading) float64 { return r.PressureHPa }),
 		WindSpeedKMH:    get(func(r openmeteo.Reading) float64 { return r.WindSpeedKMH }),
 		UVIndex:         get(func(r openmeteo.Reading) float64 { return r.UVIndex }),
+		CloudCover:      medianOfPresent(recs, func(r openmeteo.Reading) *float64 { return r.CloudCover }),
 		Sunrise:         sunrise,
 		Sunset:          sunset,
 	}
+}
+
+// medianOfPresent is the median of the non-nil values, or nil if none.
+func medianOfPresent(recs []openmeteo.Reading, f func(openmeteo.Reading) *float64) *float64 {
+	var vals []float64
+	for _, r := range recs {
+		if p := f(r); p != nil {
+			vals = append(vals, *p)
+		}
+	}
+	if len(vals) == 0 {
+		return nil
+	}
+	m := medianFloat64(vals)
+	return &m
 }

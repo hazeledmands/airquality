@@ -384,3 +384,45 @@ describe('room chart axes (phone fixes)', () => {
         expect(opts.plugins.legend.labels.color).not.toBe('#555');
     });
 });
+
+// Outdoor PM2.5 next to indoor PM2.5: the "open the windows?" comparison.
+describe('outdoor PM2.5 overlay', () => {
+    const outdoorPM = { key: 'outdoorPM', label: 'Outdoor PM2.5', metric: 'Outdoor PM2.5', data: [{ x: 1, y: 24 }], yAxisID: 'y2' };
+    it('is added to rooms that measure PM2.5, on the shared PM axis', () => {
+        const room = makeRoom({ pm: [{ data: [{ x: 1, y: 3 }] }] });
+        const ds = buildCombinedDatasets(room, { outdoorPM });
+        const o = ds.find(d => d.label === 'Outdoor PM2.5');
+        expect(o).toBeTruthy();
+        expect(o.yAxisID).toBe('y2');
+    });
+    it('is not added to rooms without PM2.5', () => {
+        const ds = buildCombinedDatasets(makeRoom(), { outdoorPM });
+        expect(ds.some(d => d.label === 'Outdoor PM2.5')).toBe(false);
+    });
+    it('shows the outdoor value beside the indoor one in the strip', () => {
+        const room = makeRoom({ temp: [{ data: [{ x: 1, y: 70 }] }], pm: [{ data: [{ x: 1, y: 3.1 }] }] });
+        expect(formatLatestValues(room, { outdoorPM: 24 }).replace(/<[^>]+>/g, '')).toContain('outdoor 24');
+        expect(formatLatestValues(room)).not.toContain('outdoor');
+    });
+});
+
+// Index-mode tooltips pair datasets by array position, so the hourly outdoor
+// series is resampled onto the indoor PM timestamps.
+describe('outdoor PM2.5 alignment', () => {
+    const H = 3600_000, T0 = Date.parse('2026-11-21T10:00:00Z');
+    const iso = (ms) => new Date(ms).toISOString();
+    it('has one point per indoor PM point, holding the latest hourly value', () => {
+        const indoor = [0, 20, 40, 60, 80].map(m => ({ x: iso(T0 + m * 60_000), y: 3 }));
+        const outdoorPM = { label: 'Outdoor PM2.5', data: [{ x: iso(T0), y: 10 }, { x: iso(T0 + H), y: 20 }], yAxisID: 'y2' };
+        const room = makeRoom({ pm: [{ data: indoor }] });
+        const o = buildCombinedDatasets(room, { outdoorPM }).find(d => d.label === 'Outdoor PM2.5');
+        expect(o.data.map(p => p.x)).toEqual(indoor.map(p => p.x));
+        expect(o.data.map(p => p.y)).toEqual([10, 10, 10, 20, 20]);
+    });
+    it('leaves gaps where no outdoor sample is recent', () => {
+        const indoor = [{ x: iso(T0 + 5 * H), y: 3 }, { x: null, y: null }];
+        const outdoorPM = { label: 'Outdoor PM2.5', data: [{ x: iso(T0), y: 10 }], yAxisID: 'y2' };
+        const o = buildCombinedDatasets(makeRoom({ pm: [{ data: indoor }] }), { outdoorPM }).find(d => d.label === 'Outdoor PM2.5');
+        expect(o.data.map(p => p.y)).toEqual([null, null]);
+    });
+});
