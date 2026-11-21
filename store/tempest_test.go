@@ -2,8 +2,14 @@ package store
 
 import (
 	"context"
+	"errors"
+	"fmt"
+	"os"
+	"strings"
 	"testing"
 	"time"
+
+	"github.com/jackc/pgx/v5/pgconn"
 
 	"github.com/hazel/airquality/tempest"
 )
@@ -248,5 +254,40 @@ func TestTempestTablesExist(t *testing.T) {
 	ok, err := s.TempestTablesExist(context.Background())
 	if err != nil || !ok {
 		t.Errorf("ok = %v err = %v, want true with the migration applied", ok, err)
+	}
+}
+
+// Only data errors (bad values) fall back to row-by-row; a dead connection
+// fails fast instead of being retried once per row.
+func TestUpsertTempestObservations_ConnectionErrorFailsFast(t *testing.T) {
+	s := openTestStore(t)
+	broken, err := New(context.Background(), os.Getenv("DATABASE_URL"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	broken.Close()
+	obs := make([]tempest.Observation, 50)
+	for i := range obs {
+		obs[i] = tempest.Observation{DeviceID: 990007, Time: time.Date(2026, 11, 7, 0, i, 0, 0, time.UTC)}
+	}
+	_, err = broken.UpsertTempestObservations(context.Background(), obs)
+	if err == nil {
+		t.Fatal("want error on a closed pool")
+	}
+	if strings.Contains(err.Error(), "rows failed") {
+		t.Errorf("err = %v: fell back to row-by-row on a connection error", err)
+	}
+	_ = s
+}
+
+func TestIsTempestDataError(t *testing.T) {
+	if !isDataError(&pgconn.PgError{Code: "22003"}) || !isDataError(&pgconn.PgError{Code: "23502"}) {
+		t.Error("class 22/23 must count as data errors")
+	}
+	if isDataError(&pgconn.PgError{Code: "57P01"}) || isDataError(errors.New("conn closed")) {
+		t.Error("admin shutdown / plain errors are not data errors")
+	}
+	if !isDataError(fmt.Errorf("failed to encode args[14]: unable to encode 40000 into binary format for int2")) {
+		t.Error("pgx encode errors are data errors")
 	}
 }

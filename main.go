@@ -120,23 +120,16 @@ func main() {
 	defer db.Close()
 	log.Printf("Connected to database")
 
+	m := metrics.New()
+
 	// Tempest is optional: without its migration it is disabled, loudly,
 	// and everything else keeps running.
-	tempestEnabled := tempestToken != ""
-	if tempestEnabled {
-		ok, err := db.TempestTablesExist(context.Background())
-		if err != nil || !ok {
-			log.Printf("TEMPEST DISABLED: TEMPEST_TOKEN is set but the tempest tables are missing (%v); apply supabase/migrations/20261120000000_create_tempest.sql and restart", err)
-			tempestEnabled = false
-		}
-	}
+	tempestEnabled := tempestStartup(context.Background(), db, tempestToken, m, log.Printf)
 
 	cache, err := newDataCache(context.Background(), db, tempestEnabled)
 	if err != nil {
 		log.Fatalf("Failed to backfill cache: %v", err)
 	}
-
-	m := metrics.New()
 
 	authn := authConfig{header: os.Getenv("AUTH_USER_HEADER")}
 	if authn.header == "" {
@@ -147,13 +140,11 @@ func main() {
 	defer stop()
 
 	var tempestRec *tempestRecorder
-	if tempestToken != "" {
-		m.SetTempestEnabled(tempestEnabled)
-	}
-	tempestWS := os.Getenv("TEMPEST_WS_URL")
+	var tempestWS string
 	if tempestEnabled {
+		tempestWS = tempestURLOverride("TEMPEST_WS_URL", "wss", "ws")
 		client := tempest.NewClient(tempestToken)
-		if u := os.Getenv("TEMPEST_API_URL"); u != "" {
+		if u := tempestURLOverride("TEMPEST_API_URL", "https", "http"); u != "" {
 			client.BaseURL = u
 		}
 		tempestRec = newTempestRecorder(client, db, cache, m, fileCfg, tempestStationID, cfg.verbose)

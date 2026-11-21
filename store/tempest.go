@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 
 	"github.com/hazel/airquality/tempest"
 )
@@ -69,11 +70,27 @@ var upsertTempestSQL = func() string {
 		WHERE (` + strings.Join(olds, ", ") + `) IS DISTINCT FROM (` + strings.Join(news, ", ") + `)`
 }()
 
+// fallbackTimeout bounds the row-by-row retry of one batch.
+const fallbackTimeout = 30 * time.Second
+
+// isDataError reports whether err means a value was bad, not that the
+// database was unreachable: SQLSTATE class 22 (data exception) or 23
+// (integrity constraint), or a value pgx could not encode.
+func isDataError(err error) bool {
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) {
+		return strings.HasPrefix(pgErr.Code, "22") || strings.HasPrefix(pgErr.Code, "23")
+	}
+	// pgx reports client-side encode failures only as text.
+	return strings.Contains(err.Error(), "failed to encode args")
+}
+
 // UpsertTempestObservations writes observations and returns how many rows
 // were inserted or changed. Safe to repeat. It tries one round trip; if the
-// database rejects the batch (which rolls it all back), it retries row by
-// row and skips, with a log line, only the rows that fail, so one bad row
-// can't stall ingestion. It returns an error only if no row could be written.
+// database rejects the batch for a bad value (which rolls it all back), it
+// retries row by row within fallbackTimeout and skips, with a log line, only
+// the rows that fail, so one bad row can't stall ingestion. Connection and
+// other errors return immediately. It also errors if no row could be written.
 func (s *Store) UpsertTempestObservations(ctx context.Context, obs []tempest.Observation) (int64, error) {
 	if len(obs) == 0 {
 		return 0, nil
@@ -82,9 +99,11 @@ func (s *Store) UpsertTempestObservations(ctx context.Context, obs []tempest.Obs
 	if err == nil {
 		return changed, nil
 	}
-	if ctx.Err() != nil {
+	if ctx.Err() != nil || !isDataError(err) {
 		return 0, err
 	}
+	ctx, cancel := context.WithTimeout(ctx, fallbackTimeout)
+	defer cancel()
 	changed = 0
 	failed := 0
 	var lastErr error
@@ -92,6 +111,9 @@ func (s *Store) UpsertTempestObservations(ctx context.Context, obs []tempest.Obs
 		args := append([]any{o.DeviceID, o.Time}, tempestValues(o)...)
 		tag, err := s.pool.Exec(ctx, upsertTempestSQL, args...)
 		if err != nil {
+			if !isDataError(err) {
+				return changed, fmt.Errorf("upsert tempest observations: %w", err)
+			}
 			failed++
 			lastErr = err
 			log.Printf("tempest device %d at %s: row skipped: %v", o.DeviceID, o.Time.Format(time.RFC3339), err)

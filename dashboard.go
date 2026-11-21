@@ -3,7 +3,9 @@ package main
 import (
 	"encoding/json"
 	"log"
+	"math"
 	"net/http"
+	"reflect"
 	"strconv"
 	"time"
 
@@ -65,16 +67,40 @@ type tempestObsJSON struct {
 }
 
 func tempestJSON(b tempestBucket, st *tempest.Station) tempestObsJSON {
+	scrubNonFinite(&b.Observation)
+	if b.RainMaxMM != nil {
+		b.RainMaxMM = finite(*b.RainMaxMM)
+	}
 	j := tempestObsJSON{tempestBucket: b}
 	if b.AirTempC != nil && b.RelativeHumidity != nil && *b.RelativeHumidity > 0 {
-		d := calc.DewPoint(*b.AirTempC, *b.RelativeHumidity)
-		j.DewPointC = &d
+		j.DewPointC = finite(calc.DewPoint(*b.AirTempC, *b.RelativeHumidity))
 	}
 	if b.StationPressureMB != nil && st != nil {
-		p := calc.SeaLevelPressure(*b.StationPressureMB, st.ElevationM)
-		j.SeaLevelPressureMB = &p
+		j.SeaLevelPressureMB = finite(calc.SeaLevelPressure(*b.StationPressureMB, st.ElevationM))
 	}
 	return j
+}
+
+// scrubNonFinite nils every NaN/Inf *float64 field. The client validates
+// values on the way in; this keeps the response encodable whatever reaches
+// the cache.
+func scrubNonFinite(o *tempest.Observation) {
+	v := reflect.ValueOf(o).Elem()
+	for i := 0; i < v.NumField(); i++ {
+		f := v.Field(i)
+		if p, ok := f.Interface().(*float64); ok && p != nil {
+			f.Set(reflect.ValueOf(finite(*p)))
+		}
+	}
+}
+
+// finite returns &v, or nil for NaN/Inf: encoding/json refuses non-finite
+// floats, and one would fail the whole /api/data response.
+func finite(v float64) *float64 {
+	if math.IsNaN(v) || math.IsInf(v, 0) {
+		return nil
+	}
+	return &v
 }
 
 func buildTempestData(enabled bool, st *tempest.Station, devs []tempest.Device, obs []tempestBucket, latest *tempest.Observation, evs []tempest.Event, cfg config.Config) tempestData {

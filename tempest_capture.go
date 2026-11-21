@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net"
+	"net/url"
 	"os"
 	"strconv"
 	"time"
@@ -458,7 +460,7 @@ TEMPEST_STATION_ID or the config file (default: the first with a Tempest).
 		log.Fatalf("Tempest tables missing (%v): apply supabase/migrations/20261120000000_create_tempest.sql first", err)
 	}
 	client := tempest.NewClient(token)
-	if u := os.Getenv("TEMPEST_API_URL"); u != "" {
+	if u := tempestURLOverride("TEMPEST_API_URL", "https", "http"); u != "" {
 		client.BaseURL = u
 	}
 	res, err := runTempestBackfill(ctx, client, db, o, log.Printf)
@@ -466,4 +468,79 @@ TEMPEST_STATION_ID or the config file (default: the first with a Tempest).
 		log.Fatalf("Backfill failed after %d observation(s): %v", res.fetched, err)
 	}
 	log.Printf("Backfill done: %d observation(s) fetched, %d new or changed", res.fetched, res.changed)
+}
+
+// --- startup ---
+
+type tempestTableChecker interface {
+	TempestTablesExist(ctx context.Context) (bool, error)
+}
+
+// tempestStartup decides whether Tempest recording runs. Tempest is
+// optional: with the token set but its tables missing, it is disabled with a
+// loud log line and airquality_tempest_enabled 0, and the rest of the app
+// keeps running.
+func tempestStartup(ctx context.Context, db tempestTableChecker, token string, m *metrics.Metrics, logf func(string, ...any)) bool {
+	if token == "" {
+		return false
+	}
+	ok, err := db.TempestTablesExist(ctx)
+	if err != nil || !ok {
+		reason := "tables tempest_observations/tempest_events not found"
+		if err != nil {
+			reason = "could not check for the tempest tables: " + err.Error()
+		}
+		logf("TEMPEST DISABLED: TEMPEST_TOKEN is set but %s; apply supabase/migrations/20261120000000_create_tempest.sql and restart", reason)
+		m.SetTempestEnabled(false)
+		return false
+	}
+	m.SetTempestEnabled(true)
+	return true
+}
+
+// resolveTempestURL validates a TEMPEST_API_URL / TEMPEST_WS_URL override
+// and returns its host for logging. The override sends the token to that
+// host, so only the secure scheme is allowed, except to loopback (a local
+// stub). Errors name the host at most, never the full URL.
+func resolveTempestURL(raw, secure, insecure string) (string, error) {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return "", errors.New("not a valid URL")
+	}
+	if u.Host == "" || u.Hostname() == "" {
+		return "", errors.New("URL has no host")
+	}
+	switch u.Scheme {
+	case secure:
+		return u.Host, nil
+	case insecure:
+		if isLoopback(u.Hostname()) {
+			return u.Host, nil
+		}
+		return "", fmt.Errorf("%s to %s would send the token unencrypted; use %s, or a loopback host", insecure, u.Hostname(), secure)
+	}
+	return "", fmt.Errorf("scheme must be %s (or %s to a loopback host)", secure, insecure)
+}
+
+func isLoopback(host string) bool {
+	if host == "localhost" {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
+}
+
+// tempestURLOverride reads an override env var; empty means the default.
+// An invalid override is fatal rather than silently ignored.
+func tempestURLOverride(name, secure, insecure string) string {
+	raw := os.Getenv(name)
+	if raw == "" {
+		return ""
+	}
+	host, err := resolveTempestURL(raw, secure, insecure)
+	if err != nil {
+		log.Fatalf("%s: %v", name, err)
+	}
+	log.Printf("Tempest: %s override in effect, host %s", name, host)
+	return raw
 }
